@@ -529,10 +529,66 @@ def test_cli_idempotence_tiebreak(temp_memory_dir):
     
     second_bytes = memory_file.read_bytes()
     assert first_bytes == second_bytes
-    
+
     # No backups created
     backups = glob.glob(str(temp_memory_dir / "MEMORY-*.md"))
     assert len(backups) == 0
+
+
+def test_cli_idempotence_is_pure_function_of_content_not_mtime(temp_memory_dir):
+    """
+    Test 8b (constraint 7, hardened): The derived MEMORY.md must be a PURE FUNCTION
+    of the topic files' CONTENT — not of filesystem mtime, which is NOT content.
+
+    mtime changes without any content change under git checkout, `cp` (non -p), and
+    `scp -r` without -p (the project's actual cross-machine workflow; rsync -a
+    preserves, plain scp does not). If mtime is a sort input, the same content on a
+    second machine reorders -> different MEMORY.md -> different hash -> (D) renames
+    on a no-change run (the per-run leak constraint 7 calls catastrophic).
+
+    Test 8 cannot catch this: it pins all mtimes equal AND supplies date_hint, so the
+    mtime tier never decides. Here the files carry NO date_hint and NO origin_session,
+    forcing the sort onto the recency tail (S2's tinkuy/aider regime), and the mtimes
+    are deliberately PERTURBED while content is held byte-identical.
+    """
+    # Two files, content-only differences, NO date_hint / NO originSessionId,
+    # so ordering must fall through to the recency tail (mtime -> filename).
+    content_a = "---\ntype: project\nname: Node A\n---\nBody A\n"
+    content_b = "---\ntype: project\nname: Node B\n---\nBody B\n"
+
+    # First index: mtime(a) older than mtime(b).
+    create_topic_file(temp_memory_dir, "project_node_a.md", content_a, mtime=1_700_000_000.0)
+    create_topic_file(temp_memory_dir, "project_node_b.md", content_b, mtime=1_700_000_500.0)
+
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
+    memory_file = temp_memory_dir / "MEMORY.md"
+    first_bytes = memory_file.read_bytes()
+
+    # Simulate a content-preserving transfer (e.g. scp -r without -p): identical
+    # bytes on disk, but mtimes are now different AND reordered relative to filename.
+    assert temp_memory_dir.joinpath("project_node_a.md").read_text() == content_a
+    assert temp_memory_dir.joinpath("project_node_b.md").read_text() == content_b
+    os.utime(temp_memory_dir / "project_node_a.md", (1_800_000_500.0, 1_800_000_500.0))
+    os.utime(temp_memory_dir / "project_node_b.md", (1_800_000_000.0, 1_800_000_000.0))
+
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
+    second_bytes = memory_file.read_bytes()
+
+    # Content did not change, so the derived index MUST be byte-identical...
+    assert second_bytes == first_bytes, (
+        "MEMORY.md changed when only mtimes changed — the derived index is sorting on "
+        "mtime, which is not file content. This violates constraint 7 (pure function "
+        "of the topic files) and will trigger (D) renames after any non-mtime-"
+        "preserving transfer."
+    )
+    # ...and (D) must NOT have fired (no rename on a content-no-change run).
+    backups = glob.glob(str(temp_memory_dir / "MEMORY-*.md"))
+    assert len(backups) == 0, (
+        f"(D) renamed MEMORY.md on a content-no-change run: {backups}. The index is "
+        "not a pure function of content."
+    )
 
 
 def test_cli_orphan_visibility(temp_memory_dir):
