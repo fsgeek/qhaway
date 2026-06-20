@@ -176,10 +176,11 @@ def test_unit_model_build_index(temp_memory_dir):
     assert edges[0][2] == "REFERENCES"
 
 
-def test_unit_project_sort_hierarchy():
+def test_unit_project_sort_tiebreak():
     """
-    Unit Test: Directly asserts sorting precedence logic on database rows.
-    Hierarchy: [date_hint?] -> origin_session -> mtime -> filename
+    Unit Test: Verifies that when all recency sorting tiers tie,
+    the sorting resolves alphabetically by filename (ascending).
+    The lead recency sorting order is deferred to the implementer.
     """
     check_modules_loaded()
 
@@ -192,42 +193,24 @@ def test_unit_project_sort_hierarchy():
         ")"
     )
     
-    # Insert rows that pit sort criteria against each other:
-    # Row 1: date_hint present, older session/mtime
+    # Insert two nodes that tie on all potential recency signals:
+    # Same date_hint, same origin_session, same mtime
     db_conn.execute(
-        "INSERT INTO nodes VALUES ('file_1.md', 'N1', 'project', 'proj', 'live', 'sess_A', '2026-06-20', 'Body', 10.0)"
+        "INSERT INTO nodes VALUES ('file_b.md', 'Node B', 'project', 'proj', 'live', 'session_1', '2026-06-20', 'Body', 10.0)"
     )
-    # Row 2: date_hint absent, but newer origin_session
     db_conn.execute(
-        "INSERT INTO nodes VALUES ('file_2.md', 'N2', 'project', 'proj', 'live', 'sess_B', NULL, 'Body', 20.0)"
-    )
-    # Row 3: date_hint & origin_session absent, newest mtime
-    db_conn.execute(
-        "INSERT INTO nodes VALUES ('file_3.md', 'N3', 'project', 'proj', 'live', NULL, NULL, 'Body', 30.0)"
-    )
-    # Row 4: Identical fields to Row 3, but different filename (should tiebreak alphabetically)
-    db_conn.execute(
-        "INSERT INTO nodes VALUES ('file_4.md', 'N4', 'project', 'proj', 'live', NULL, NULL, 'Body', 30.0)"
+        "INSERT INTO nodes VALUES ('file_a.md', 'Node A', 'project', 'proj', 'live', 'session_1', '2026-06-20', 'Body', 10.0)"
     )
 
-    # Invoke sorting query matching step 4 projection rules
-    sorted_files = db_conn.execute(
-        "SELECT file FROM nodes ORDER BY "
-        "  date_hint DESC NULLS LAST, "
-        "  origin_session DESC NULLS LAST, "
-        "  mtime DESC, "
-        "  file ASC"
-    ).fetchall()
-
-    # Precedence ensures:
-    # 1st: file_1.md (has date_hint)
-    # 2nd: file_2.md (has origin_session)
-    # 3rd: file_3.md (has newest mtime, tiebreak over file_4.md)
-    # 4th: file_4.md (older alphabetically than file_3)
-    assert sorted_files[0][0] == "file_1.md"
-    assert sorted_files[1][0] == "file_2.md"
-    assert sorted_files[2][0] == "file_3.md"
-    assert sorted_files[3][0] == "file_4.md"
+    # We call project_slice. Regardless of lead recency tiers order, they tie and must be sorted alphabetically.
+    # Therefore, 'file_a.md' must be listed before 'file_b.md' in the projected string.
+    output = project.project_slice(db_conn, budget=1000, status="live")
+    
+    idx_a = output.find("file_a.md")
+    idx_b = output.find("file_b.md")
+    
+    assert idx_a != -1 and idx_b != -1, "Expected both files in the output projection"
+    assert idx_a < idx_b, "Expected filename alphabetical tiebreak (file_a.md before file_b.md)"
 
 
 # ==============================================================================

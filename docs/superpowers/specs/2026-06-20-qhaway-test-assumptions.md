@@ -75,14 +75,12 @@ The CLI entrypoint `qhaway` is invoked as a command with subcommands and options
 
 ## 3. Sorting and Totality Rules (Idempotence)
 
-As amended by **S1** and **S2**, the ordering rules are:
-1. `date_hint` DESC (if present, nulls last)
-2. `origin_session` DESC (if present, nulls last)
-3. `mtime` DESC
-4. `filename` ASC (lexicographical PK tiebreak)
+As amended by the latest design spec changes:
+* **Deferred Recency Lead Tiers:** The specific precedence order of the leading recency tiers (`date_hint`, `origin_session`, `mtime`) is deferred to the build phase and is not constrained by this contract.
+* **Pinned Terminal Tiebreak:** To guarantee that the sort is total and run-invariant (preventing silent (D) renames on ties), the sorting sequence must conclude with a final terminal tiebreak on `filename` ASC (lexicographical PK tiebreak).
 
-This total sorting sequence is run-invariant. To support testing:
-* The test suite forces identical `mtime` and `date_hint` on files in the idempotence test to prove that the `filename` tiebreak functions correctly.
+To support testing:
+* The test suite inserts files that tie on all potential recency signals (identical `date_hint`, `origin_session`, and `mtime`) and asserts that they are sorted alphabetically by filename ascending.
 
 ---
 
