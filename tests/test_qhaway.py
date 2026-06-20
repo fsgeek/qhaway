@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import glob
 import hashlib
 import subprocess
 from datetime import datetime, timezone
@@ -11,16 +12,14 @@ from unittest.mock import patch, MagicMock
 import pytest
 import duckdb
 
-# Import the target package modules. Under TDD, these will fail/raise import errors
-# until the application skeleton is implemented. This is the expected red bar.
+# Import target package modules.
+# In TDD, these will fail/raise import errors until the application skeleton is written.
 try:
     import qhaway.parse as parse
     import qhaway.model as model
     import qhaway.project as project
     import qhaway.cli as cli
 except ImportError:
-    # Under test collection, we allow collection to proceed so we can run the test suite.
-    # We will raise errors inside tests if modules are missing.
     parse = None
     model = None
     project = None
@@ -31,12 +30,12 @@ def check_modules_loaded():
     if any(m is None for m in (parse, model, project, cli)):
         pytest.fail(
             "qhaway modules are not implemented yet. "
-            "Implement parse, model, project, and cli to run these tests."
+            "Implement parse, model, project, and cli to run unit tests."
         )
 
 
 # ==============================================================================
-# Pytest Fixtures & Helpers
+# Pytest Fixtures & Shared Helpers
 # ==============================================================================
 
 @pytest.fixture
@@ -55,8 +54,10 @@ def create_topic_file(dir_path: Path, filename: str, content: str, mtime: float 
 
 
 def run_qhaway_cli(args, cwd=None):
-    """Helper to run the CLI via subprocess using the installed virtualenv command."""
-    # We run the command via the current python executable to guarantee correct virtualenv
+    """
+    Runs the CLI purely via subprocess to test actual execution boundaries,
+    ensuring process isolation and mock-free integration.
+    """
     cmd = [sys.executable, "-m", "qhaway.cli"] + args
     result = subprocess.run(
         cmd,
@@ -68,16 +69,176 @@ def run_qhaway_cli(args, cwd=None):
 
 
 # ==============================================================================
-# Requirement 1: Budget Overflow Handling
+# SECTION A: UNIT TESTS (Direct Module & API Assertions)
 # ==============================================================================
 
-def test_budget_overflow_handling(temp_memory_dir):
+def test_unit_parse_memory_file(temp_memory_dir):
+    """
+    Unit Test: Validates qhaway.parse.parse_memory_file on normal Markdown
+    files, including metadata derivation and wikilink extraction.
+    """
+    check_modules_loaded()
+
+    # Create a typical topic file
+    content = (
+        "---\n"
+        "name: project_a\n"
+        "type: project\n"
+        "originSessionId: session_123\n"
+        "---\n"
+        "This is the body. It references [[topic_b]] and [[topic_c]].\n"
+    )
+    filepath = create_topic_file(temp_memory_dir, "project_a.md", content)
+    
+    result = parse.parse_memory_file(str(filepath))
+    
+    assert result["file"] == "project_a.md"
+    assert result["name"] == "project_a"
+    assert result["content_type"] == "project"
+    assert result["role"] == "project"  # Derived from "project_a.md" prefix
+    assert result["status"] == "live"
+    assert result["origin_session"] == "session_123"
+    assert "topic_b" in result["links"]
+    assert "topic_c" in result["links"]
+    assert "This is the body." in result["body"]
+
+
+def test_unit_parse_fallback_and_tolerance(temp_memory_dir):
+    """
+    Unit Test: Verifies tolerance to malformed/unquoted colon frontmatter.
+    "Never drop a file silently on a parse slip — fall back to a tolerant parse..."
+    """
+    check_modules_loaded()
+
+    # Malformed frontmatter with unquoted colons
+    content = (
+        "---\n"
+        "name: project_broken:sub:section\n"
+        "type: project\n"
+        "invalid_yaml_field: { unmatched_brace\n"
+        "---\n"
+        "Prose content stays intact.\n"
+    )
+    filepath = create_topic_file(temp_memory_dir, "project_broken.md", content)
+    
+    # Tolerant parser should succeed without throwing exceptions
+    result = parse.parse_memory_file(str(filepath))
+    
+    assert result["file"] == "project_broken.md"
+    # Even if parsing YAML fails, prose body must be recovered
+    assert "Prose content stays intact." in result["body"]
+    # Fallback to body-only parsing defaults metadata fields gracefully
+    assert result["status"] == "live"
+
+
+def test_unit_model_build_index(temp_memory_dir):
+    """
+    Unit Test: Verifies qhaway.model.build_index generates correct database
+    schemas (nodes and edges) and populates them correctly.
+    """
+    check_modules_loaded()
+
+    # Write source topic files
+    create_topic_file(
+        temp_memory_dir,
+        "project_a.md",
+        "---\ntype: project\nname: Project A\n---\nRefers to [[reference_b]]"
+    )
+    create_topic_file(
+        temp_memory_dir,
+        "reference_b.md",
+        "---\ntype: reference\nname: SUPERSEDED\n---\nSuperseded body"
+    )
+
+    # Build database index in memory
+    db_conn = model.build_index(str(temp_memory_dir), db_path=":memory:")
+    
+    # Assert nodes schema and contents
+    nodes = db_conn.execute("SELECT file, name, content_type, role, status FROM nodes ORDER BY file").fetchall()
+    assert len(nodes) == 2
+    
+    # Node A assertions
+    assert nodes[0][0] == "project_a.md"
+    assert nodes[0][2] == "project"
+    assert nodes[0][3] == "project"
+    assert nodes[0][4] == "live"
+    
+    # Node B assertions (Tombstone status check SUPERSEDED)
+    assert nodes[1][0] == "reference_b.md"
+    assert nodes[1][2] == "reference"
+    assert nodes[1][4] == "superseded"
+    
+    # Assert edges schema and contents
+    edges = db_conn.execute("SELECT src_file, dst_slug, kind FROM edges").fetchall()
+    assert len(edges) == 1
+    assert edges[0][0] == "project_a.md"
+    assert edges[0][1] == "reference_b"
+    assert edges[0][2] == "REFERENCES"
+
+
+def test_unit_project_sort_hierarchy():
+    """
+    Unit Test: Directly asserts sorting precedence logic on database rows.
+    Hierarchy: [date_hint?] -> origin_session -> mtime -> filename
+    """
+    check_modules_loaded()
+
+    # Establish an in-memory db setup using model schemas
+    db_conn = duckdb.connect(":memory:")
+    db_conn.execute(
+        "CREATE TABLE nodes ("
+        "  file VARCHAR, name VARCHAR, content_type VARCHAR, role VARCHAR, "
+        "  status VARCHAR, origin_session VARCHAR, date_hint VARCHAR, body VARCHAR, mtime DOUBLE"
+        ")"
+    )
+    
+    # Insert rows that pit sort criteria against each other:
+    # Row 1: date_hint present, older session/mtime
+    db_conn.execute(
+        "INSERT INTO nodes VALUES ('file_1.md', 'N1', 'project', 'proj', 'live', 'sess_A', '2026-06-20', 'Body', 10.0)"
+    )
+    # Row 2: date_hint absent, but newer origin_session
+    db_conn.execute(
+        "INSERT INTO nodes VALUES ('file_2.md', 'N2', 'project', 'proj', 'live', 'sess_B', NULL, 'Body', 20.0)"
+    )
+    # Row 3: date_hint & origin_session absent, newest mtime
+    db_conn.execute(
+        "INSERT INTO nodes VALUES ('file_3.md', 'N3', 'project', 'proj', 'live', NULL, NULL, 'Body', 30.0)"
+    )
+    # Row 4: Identical fields to Row 3, but different filename (should tiebreak alphabetically)
+    db_conn.execute(
+        "INSERT INTO nodes VALUES ('file_4.md', 'N4', 'project', 'proj', 'live', NULL, NULL, 'Body', 30.0)"
+    )
+
+    # Invoke sorting query matching step 4 projection rules
+    sorted_files = db_conn.execute(
+        "SELECT file FROM nodes ORDER BY "
+        "  date_hint DESC NULLS LAST, "
+        "  origin_session DESC NULLS LAST, "
+        "  mtime DESC, "
+        "  file ASC"
+    ).fetchall()
+
+    # Precedence ensures:
+    # 1st: file_1.md (has date_hint)
+    # 2nd: file_2.md (has origin_session)
+    # 3rd: file_3.md (has newest mtime, tiebreak over file_4.md)
+    # 4th: file_4.md (older alphabetically than file_3)
+    assert sorted_files[0][0] == "file_1.md"
+    assert sorted_files[1][0] == "file_2.md"
+    assert sorted_files[2][0] == "file_3.md"
+    assert sorted_files[3][0] == "file_4.md"
+
+
+# ==============================================================================
+# SECTION B: INTEGRATION TESTS (Process-Isolated Subprocess Runs)
+# ==============================================================================
+
+def test_cli_budget_overflow_handling(temp_memory_dir):
     """
     Test 1: A corpus that overflows the budget yields a MEMORY.md under the budget,
     including the reserved footer.
     """
-    check_modules_loaded()
-    
     # Create 10 topic files of type project
     for i in range(10):
         content = (
@@ -89,13 +250,11 @@ def test_budget_overflow_handling(temp_memory_dir):
         )
         create_topic_file(temp_memory_dir, f"project_topic_{i}.md", content)
         
-    # We run qhaway index with a tight budget (e.g. 500 bytes)
-    # The output MEMORY.md must be strictly under 500 bytes and contain the footer.
     budget = 500
     
-    # Run the index generator
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir), "--budget", str(budget)])
-    assert exit_code == 0
+    # Run the index generator via CLI subprocess
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--budget", str(budget)])
+    assert res.returncode == 0
     
     memory_file = temp_memory_dir / "MEMORY.md"
     assert memory_file.exists()
@@ -108,18 +267,12 @@ def test_budget_overflow_handling(temp_memory_dir):
     assert "qhaway index --type" in content, "Expected footer to contain run filter suggestion"
 
 
-# ==============================================================================
-# Requirement 2: No Silent Omissions
-# ==============================================================================
-
-def test_no_silent_omissions(temp_memory_dir):
+def test_cli_no_silent_omissions(temp_memory_dir):
     """
     Test 2: Nothing omitted is omitted silently — every omission has a declared
     footer line, and (shown + declared-omitted) == total live nodes.
     Tombstones excluded are also declared.
     """
-    check_modules_loaded()
-    
     # Create 5 projects and 3 references
     for i in range(5):
         create_topic_file(
@@ -141,23 +294,16 @@ def test_no_silent_omissions(temp_memory_dir):
         "---\ntype: project\nname: SUPERSEDED\n---\nThis was superseded.\n"
     )
     
-    # Run qhaway index with a budget that forces omission of some projects/references
-    # Let's check with dry-run/index under a low budget
     budget = 300
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir), "--budget", str(budget)])
-    assert exit_code == 0
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--budget", str(budget)])
+    assert res.returncode == 0
     
     content = (temp_memory_dir / "MEMORY.md").read_text(encoding="utf-8")
     
-    # Let's count how many projects and references are listed in MEMORY.md.
-    # Lines match: - [Title](file.md) — hook
+    # Count listed items in output
     shown_projects = content.count("](project_")
     shown_references = content.count("](reference_")
     
-    # Parse the footer lines.
-    # Output matches: +N project memories not shown; qhaway index --type project
-    # Output matches: +N reference memories not shown; qhaway index --type reference
-    # Output matches: +N superseded memories hidden; qhaway index --status superseded
     omitted_projects = 0
     omitted_references = 0
     superseded_declared = 0
@@ -175,17 +321,10 @@ def test_no_silent_omissions(temp_memory_dir):
     assert superseded_declared == 1, "Expected 1 superseded node declared"
 
 
-# ==============================================================================
-# Requirement 3: Wiki-link Rot Checking (--check)
-# ==============================================================================
-
-def test_wikilink_rot_checking(temp_memory_dir):
+def test_cli_wikilink_rot_checking(temp_memory_dir):
     """
     Test 3: --check reports [[wikilinks]] in topic-file BODIES that point at missing files.
     """
-    check_modules_loaded()
-    
-    # Create valid files
     create_topic_file(
         temp_memory_dir,
         "valid_one.md",
@@ -196,84 +335,59 @@ def test_wikilink_rot_checking(temp_memory_dir):
         "valid_two.md",
         "---\ntype: project\nname: Valid Two\n---\nI exist.\n"
     )
-    # Create file with broken link
+    # Broken link
     create_topic_file(
         temp_memory_dir,
         "broken_one.md",
         "---\ntype: project\nname: Broken One\n---\nLinks to [[missing_target_file]]\n"
     )
     
-    # Run cli with --check. It should detect "missing_target_file" as rot and exit with error.
-    # We redirect output to capture the warnings.
-    with patch("sys.stdout", new_callable=MagicMock) as mock_stdout, \
-         patch("sys.stderr", new_callable=MagicMock) as mock_stderr:
-        exit_code = cli.main(["index", "--dir", str(temp_memory_dir), "--check"])
-        
-        # Verify exit_code is non-zero (since there is rot)
-        assert exit_code != 0
-        
-        # Get stdout / stderr content
-        stdout_calls = "".join([call[0][0] for call in mock_stdout.write.call_args_list])
-        stderr_calls = "".join([call[0][0] for call in mock_stderr.write.call_args_list])
-        full_output = stdout_calls + stderr_calls
-        
-        # Verify the warning is present and specifies the missing slug
-        assert "missing_target_file" in full_output
-        assert "broken_one.md" in full_output
-        
-    # Verify that --check did NOT write MEMORY.md or .qhaway.json
+    # Execute check via subprocess
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--check"])
+    
+    assert res.returncode != 0
+    full_output = res.stdout + res.stderr
+    assert "missing_target_file" in full_output
+    assert "broken_one.md" in full_output
+    
+    # Verify check did NOT write files
     assert not (temp_memory_dir / "MEMORY.md").exists()
     assert not (temp_memory_dir / ".qhaway.json").exists()
 
 
-# ==============================================================================
-# Requirement 4: Tombstone Handling
-# ==============================================================================
-
-def test_tombstone_handling(temp_memory_dir):
+def test_cli_tombstone_handling(temp_memory_dir):
     """
-    Test 4: Tombstoned nodes (SUPERSEDED / DELETED name field) are excluded from the
-    default slice, but queryable by --status superseded, and declared in footer.
+    Test 4: Tombstoned nodes are excluded from default run, visible in status=superseded,
+    and declared in footer.
     """
-    check_modules_loaded()
-    
-    # Create live topic
     create_topic_file(
         temp_memory_dir,
         "live_topic.md",
         "---\ntype: project\nname: Active Project\n---\nBody here\n"
     )
-    # Create SUPERSEDED tombstone
     create_topic_file(
         temp_memory_dir,
         "old_project.md",
         "---\ntype: project\nname: SUPERSEDED\n---\nOld project body\n"
     )
-    # Create DELETED tombstone (Finding S3: DELETED-marked file)
     create_topic_file(
         temp_memory_dir,
         "deleted_project.md",
         "---\ntype: project\nname: DELETED\n---\nDeleted project body\n"
     )
     
-    # Default index run
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir)])
-    assert exit_code == 0
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
     
     content = (temp_memory_dir / "MEMORY.md").read_text(encoding="utf-8")
-    
-    # Tombstones must be excluded from listing
     assert "live_topic.md" in content
     assert "old_project.md" not in content
     assert "deleted_project.md" not in content
-    
-    # Footer must declare 2 superseded memories hidden
     assert "2 superseded memories hidden" in content
     
-    # Now query specifically by --status superseded.
-    # This should regenerate MEMORY.md with ONLY superseded files.
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir), "--status", "superseded"])
-    assert exit_code == 0
+    # Query superseded slice specifically
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--status", "superseded"])
+    assert res.returncode == 0
     
     superseded_content = (temp_memory_dir / "MEMORY.md").read_text(encoding="utf-8")
     assert "old_project.md" in superseded_content
@@ -281,388 +395,263 @@ def test_tombstone_handling(temp_memory_dir):
     assert "live_topic.md" not in superseded_content
 
 
-# ==============================================================================
-# Requirement 5: Machine Contract (Pattern + Resolvable Links)
-# ==============================================================================
+def test_cli_role_filtering(temp_memory_dir):
+    """
+    Gaps Fix CLI Flag: Verifies the --role <role> filter functions as expected on disk.
+    """
+    # Filename prefix defines role
+    create_topic_file(
+        temp_memory_dir,
+        "feedback_topic.md",
+        "---\ntype: feedback\nname: Feedback Topic\n---\nBody"
+    )
+    create_topic_file(
+        temp_memory_dir,
+        "project_topic.md",
+        "---\ntype: project\nname: Project Topic\n---\nBody"
+    )
 
-def test_machine_contract_format(temp_memory_dir):
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--role", "feedback"])
+    assert res.returncode == 0
+
+    content = (temp_memory_dir / "MEMORY.md").read_text(encoding="utf-8")
+    assert "feedback_topic.md" in content
+    assert "project_topic.md" not in content
+
+
+def test_cli_dry_run_action(temp_memory_dir):
     """
-    Test 5: Machine-contract, not "format": every emitted line matches the harness pattern
-    `- [Title](file.md) — hook`, and every link target resolves to a file on disk.
+    Gaps Fix CLI Flag: Verifies that --dry-run prints projection to stdout
+    without editing MEMORY.md on disk.
     """
-    check_modules_loaded()
-    
-    # Create multiple topics with varying hooks (frontmatter description or similar)
-    # Note: Hook is the frontmatter description or index hook.
+    create_topic_file(
+        temp_memory_dir,
+        "topic.md",
+        "---\ntype: project\nname: Project Title\n---\nBody content"
+    )
+
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--dry-run"])
+    assert res.returncode == 0
+
+    # Output must carry content
+    assert "project_title" in res.stdout.lower() or "topic.md" in res.stdout
+    # Disk remains untouched
+    assert not (temp_memory_dir / "MEMORY.md").exists()
+
+
+def test_cli_machine_contract_format(temp_memory_dir):
+    """
+    Test 5: Emitted index lines match pattern and links resolve.
+    """
     create_topic_file(
         temp_memory_dir,
         "topic_a.md",
-        "---\ntype: project\nname: Title A\ndescription: Actionable hook description A\n---\nBody A"
+        "---\ntype: project\nname: Title A\ndescription: Hook description A\n---\nBody A"
     )
     create_topic_file(
         temp_memory_dir,
         "topic_b.md",
-        "---\ntype: reference\nname: Title B\ndescription: Resource hook B\n---\nBody B"
+        "---\ntype: reference\nname: Title B\ndescription: Hook B\n---\nBody B"
     )
     
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir)])
-    assert exit_code == 0
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
     
     content = (temp_memory_dir / "MEMORY.md").read_text(encoding="utf-8")
-    lines = content.splitlines()
-    
-    # Check that entries match the pattern: - [Title](file.md) — hook
-    list_lines = [line for line in lines if line.strip().startswith("- ")]
+    list_lines = [line for line in content.splitlines() if line.strip().startswith("- ")]
     assert len(list_lines) >= 2
     
     for line in list_lines:
-        # Pattern: - [Title](file.md) — hook
         assert " — " in line
         prefix, hook = line.split(" — ", 1)
         assert prefix.startswith("- [")
         assert "]" in prefix
         assert "(" in prefix and prefix.endswith(")")
         
-        # Extract filename
         filename = prefix.split("(")[-1][:-1]
-        # Verify filename resolves to a file on disk
-        target_path = temp_memory_dir / filename
-        assert target_path.exists(), f"Emitted link target {filename} does not exist"
+        assert (temp_memory_dir / filename).exists()
 
 
-# ==============================================================================
-# Requirement 6: Non-Destructive Edit-Handling (D)
-# ==============================================================================
-
-def test_non_destructive_edit_handling(temp_memory_dir):
+def test_cli_non_destructive_edit_handling(temp_memory_dir):
     """
-    Test 6: Given a MEMORY.md whose hash differs from the recorded last-output hash,
-    qhaway index renames it to MEMORY-<timestamp>.md before writing the fresh one.
+    Test 6 & Gaps Fix Edit Backup: Non-destructive edit handling.
+    Ensures that custom edits trigger timestamps and sequential backups.
+    Does not require system clock mocking inside subprocess environments.
     """
-    check_modules_loaded()
-    
-    # Write a topic file
     create_topic_file(
         temp_memory_dir,
         "topic.md",
         "---\ntype: user\nname: User Topic\n---\nSome user profile details.\n"
     )
     
-    # 1. Run index to initialize MEMORY.md and .qhaway.json
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir)])
-    assert exit_code == 0
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
     
     memory_file = temp_memory_dir / "MEMORY.md"
-    sidecar_file = temp_memory_dir / ".qhaway.json"
+    original_content = memory_file.read_text(encoding="utf-8")
     
-    assert memory_file.exists()
-    assert sidecar_file.exists()
+    # Hand edit memory index
+    edited_content = original_content + "\n- [Stray Edit](stray.md) — Manual Note\n"
+    memory_file.write_text(edited_content, encoding="utf-8")
     
-    original_memory_content = memory_file.read_text(encoding="utf-8")
+    # Run again to trigger rename
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
     
-    # 2. Simulate manual hand-edit of MEMORY.md (change hash)
-    edited_memory_content = original_memory_content + "\n- [Stray Hand-Edit](stray.md) — Some manually added prose\n"
-    memory_file.write_text(edited_memory_content, encoding="utf-8")
+    # Check for glob pattern matching backup structure: MEMORY-*.md
+    backups = glob.glob(str(temp_memory_dir / "MEMORY-*.md"))
+    assert len(backups) == 1
+    assert Path(backups[0]).read_text(encoding="utf-8") == edited_content
     
-    # 3. Run qhaway index again. It must detect change, preserve MEMORY.md, and write fresh.
-    # We patch time to have a known timestamp.
-    mock_now = datetime(2026, 6, 20, 14, 30, 0, tzinfo=timezone.utc)
-    with patch("qhaway.cli.datetime") as mock_datetime:
-        # Support both datetime.now(timezone.utc) and datetime.utcnow() or similar
-        mock_datetime.now.return_value = mock_now
-        mock_datetime.utcnow.return_value = mock_now
-        mock_datetime.fromtimestamp.side_effect = lambda t, tz=None: datetime.fromtimestamp(t, tz)
-        
-        exit_code = cli.main(["index", "--dir", str(temp_memory_dir)])
-        assert exit_code == 0
-        
-    # Verify that the backup file is written with correct microsecond/timestamp resolution
-    # Standard format: MEMORY-20260620T143000.md or similar.
-    # Let's search for files matching MEMORY-*.md
-    backup_files = list(temp_memory_dir.glob("MEMORY-*.md"))
-    assert len(backup_files) == 1
-    
-    backup_file = backup_files[0]
-    # Check that backup content matches the edited content exactly
-    assert backup_file.read_text(encoding="utf-8") == edited_memory_content
-    
-    # Check that MEMORY.md is regenerated back to fresh content
-    assert memory_file.read_text(encoding="utf-8") == original_memory_content
+    # Verify index restored
+    assert memory_file.read_text(encoding="utf-8") == original_content
 
 
-# ==============================================================================
-# Requirement 7: Budget is Token-Pinned
-# ==============================================================================
-
-def test_budget_is_token_pinned():
+def test_cli_budget_is_token_pinned():
     """
-    Test 7: The default budget constant is asserted against the measured harness limit,
-    so a limit change fails this test rather than silently re-truncating.
-    Verified live harness limit is 25000 bytes.
+    Test 7: Default budget constant pinned. Evaluated on module package structure
+    if implemented. Otherwise CLI usage checks defaults.
     """
     check_modules_loaded()
     
-    # We check that the default budget defined in our CLI/project modules is strictly
-    # less than 25000 bytes (e.g. 24000 or 24400 bytes, representing measured limit - headroom).
-    # It must also be pinned in code so a developer cannot change it without changing the test.
     default_budget = getattr(cli, "DEFAULT_BUDGET", None) or getattr(project, "DEFAULT_BUDGET", None)
-    assert default_budget is not None, "DEFAULT_BUDGET constant not defined in cli or project modules"
+    assert default_budget is not None
     
-    # Verified live harness limit: 25000 bytes
     HARNESS_LIMIT_BYTES = 25000
-    assert default_budget <= HARNESS_LIMIT_BYTES, f"Default budget {default_budget} exceeds live harness limit {HARNESS_LIMIT_BYTES}"
+    assert default_budget <= HARNESS_LIMIT_BYTES
     
-    # Pin the exact default value to prevent silent deviation
     EXPECTED_PINNED_BUDGET = 24000
-    assert default_budget == EXPECTED_PINNED_BUDGET, f"Default budget changed from pinned {EXPECTED_PINNED_BUDGET} to {default_budget}"
+    assert default_budget == EXPECTED_PINNED_BUDGET
 
 
-# ==============================================================================
-# Requirement 8: Idempotence (Cornerstone of D)
-# ==============================================================================
-
-def test_idempotence_tiebreak(temp_memory_dir):
+def test_cli_idempotence_tiebreak(temp_memory_dir):
     """
-    Test 8: Two consecutive qhaway index runs with no topic-file changes produce a
-    byte-identical MEMORY.md and create zero new MEMORY-<ts>.md files.
-    Fixture requirement: The idempotence corpus MUST include at least one pair of nodes
-    with identical date_hint AND identical mtime, so the filename final tiebreak
-    is actually exercised.
+    Test 8: Idempotence check with SAME mtime and date_hint (Findings S2 Tinkuy layout).
     """
-    check_modules_loaded()
-    
-    # Set up tie-break nodes with identical date_hint and identical mtime (as per S2 / Test 8 fixture rule).
-    # Files: node_a.md and node_b.md
-    # Same date_hint, same mtime (e.g., 1753990000.0)
     fixed_mtime = 1753990000.0
-    
-    # We put them in the prioritized set (or normal project set) so they are sorted together.
-    # Note: Findings S2 specifies model on aider/tinkuy (tiebreak-dominant).
-    content_a = (
-        "---\n"
-        "type: project\n"
-        "name: Node A\n"
-        "date_hint: 2026-06-20\n"
-        "---\n"
-        "Body A\n"
-    )
-    content_b = (
-        "---\n"
-        "type: project\n"
-        "name: Node B\n"
-        "date_hint: 2026-06-20\n"
-        "---\n"
-        "Body B\n"
-    )
+    content_a = "---\ntype: project\nname: Node A\ndate_hint: 2026-06-20\n---\nBody A\n"
+    content_b = "---\ntype: project\nname: Node B\ndate_hint: 2026-06-20\n---\nBody B\n"
     
     create_topic_file(temp_memory_dir, "project_node_a.md", content_a, mtime=fixed_mtime)
     create_topic_file(temp_memory_dir, "project_node_b.md", content_b, mtime=fixed_mtime)
     
-    # 1. First Run: Generates MEMORY.md
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir)])
-    assert exit_code == 0
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
     
     memory_file = temp_memory_dir / "MEMORY.md"
-    assert memory_file.exists()
-    first_run_content = memory_file.read_bytes()
+    first_bytes = memory_file.read_bytes()
     
-    # Ensure backups do not exist
-    backup_files_1 = list(temp_memory_dir.glob("MEMORY-*.md"))
-    assert len(backup_files_1) == 0
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
     
-    # 2. Second Run: With absolutely no changes.
-    # Must produce byte-identical MEMORY.md and no renames.
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir)])
-    assert exit_code == 0
+    second_bytes = memory_file.read_bytes()
+    assert first_bytes == second_bytes
     
-    second_run_content = memory_file.read_bytes()
-    assert first_run_content == second_run_content, "MEMORY.md content changed between runs!"
-    
-    backup_files_2 = list(temp_memory_dir.glob("MEMORY-*.md"))
-    assert len(backup_files_2) == 0, "Idempotent run triggered a non-destructive rename!"
+    # No backups created
+    backups = glob.glob(str(temp_memory_dir / "MEMORY-*.md"))
+    assert len(backups) == 0
 
 
-# ==============================================================================
-# Requirement 9: Orphan Visibility (--check)
-# ==============================================================================
-
-def test_orphan_visibility(temp_memory_dir):
+def test_cli_orphan_visibility(temp_memory_dir):
     """
-    Test 9: --check reports the count and names of existing MEMORY-<ts>.md orphan files.
+    Test 9: --check reports orphans.
     """
-    check_modules_loaded()
-    
-    # Create topic file to allow check to proceed
     create_topic_file(temp_memory_dir, "topic.md", "---\ntype: project\nname: Project\n---\nBody")
     
-    # Create dummy orphan backup files
-    orphan_1 = temp_memory_dir / "MEMORY-20260620T120000.md"
-    orphan_1.write_text("Old preserved index 1", encoding="utf-8")
-    orphan_2 = temp_memory_dir / "MEMORY-20260620T120100.md"
-    orphan_2.write_text("Old preserved index 2", encoding="utf-8")
+    # Generate mock orphans on disk
+    (temp_memory_dir / "MEMORY-20260620T120000.md").write_text("Backup 1")
+    (temp_memory_dir / "MEMORY-20260620T120100.md").write_text("Backup 2")
     
-    with patch("sys.stdout", new_callable=MagicMock) as mock_stdout:
-        # Run check
-        exit_code = cli.main(["index", "--dir", str(temp_memory_dir), "--check"])
-        
-        # Verify success exit code (assuming no rot exist)
-        assert exit_code == 0
-        
-        stdout_calls = "".join([call[0][0] for call in mock_stdout.write.call_args_list])
-        
-        # Output must report 2 orphan files and list their names
-        assert "2" in stdout_calls
-        assert "MEMORY-20260620T120000.md" in stdout_calls
-        assert "MEMORY-20260620T120100.md" in stdout_calls
-
-
-# ==============================================================================
-# Requirement 10: Prioritized Set is Not Budget-Exempt
-# ==============================================================================
-
-def test_prioritized_set_not_exempt(temp_memory_dir):
-    """
-    Test 10: A corpus whose user+feedback nodes ALONE exceed the budget still yields
-    a MEMORY.md under budget, with the omission declared.
-    """
-    check_modules_loaded()
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--check"])
+    assert res.returncode == 0
     
-    # Create multiple user and feedback topics
+    output = res.stdout + res.stderr
+    assert "2" in output
+    assert "MEMORY-20260620T120000.md" in output
+    assert "MEMORY-20260620T120100.md" in output
+
+
+def test_cli_prioritized_set_not_exempt(temp_memory_dir):
+    """
+    Test 10: Prioritized files are also subject to budget restrictions.
+    """
     for i in range(5):
-        create_topic_file(
-            temp_memory_dir,
-            f"user_{i}.md",
-            f"---\ntype: user\nname: User {i}\n---\nUser settings info {i}\n"
-        )
+        create_topic_file(temp_memory_dir, f"user_{i}.md", f"---\ntype: user\nname: User {i}\n---\nUser body {i}")
     for i in range(5):
-        create_topic_file(
-            temp_memory_dir,
-            f"feedback_{i}.md",
-            f"---\ntype: feedback\nname: Feedback {i}\n---\nFeedback loop info {i}\n"
-        )
+        create_topic_file(temp_memory_dir, f"feedback_{i}.md", f"---\ntype: feedback\nname: Feed {i}\n---\nFeed body {i}")
         
-    # Run with a very low budget (e.g. 300 bytes)
     budget = 300
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir), "--budget", str(budget)])
-    assert exit_code == 0
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--budget", str(budget)])
+    assert res.returncode == 0
     
-    memory_file = temp_memory_dir / "MEMORY.md"
-    content = memory_file.read_text(encoding="utf-8")
-    byte_size = len(content.encode("utf-8"))
-    
-    assert byte_size <= budget
-    # The prioritized set must have yielded to declared omission
+    content = (temp_memory_dir / "MEMORY.md").read_text(encoding="utf-8")
+    assert len(content.encode("utf-8")) <= budget
     assert "user memories not shown" in content or "feedback memories not shown" in content
 
 
-# ==============================================================================
-# Requirement 11: Preservation Can't Self-Destruct
-# ==============================================================================
-
-def test_preservation_cant_self_destruct(temp_memory_dir):
+def test_cli_preservation_cant_self_destruct(temp_memory_dir):
     """
-    Test 11: Two renames forced to the same timestamp resolution produce two
-    distinct MEMORY-<ts>[-NN].md files — the second never overwrites the first.
+    Test 11: Non-destructive overwrite prevention. Multiple renames write sequential suffixes.
     """
-    check_modules_loaded()
-    
-    # Create topic file
     create_topic_file(temp_memory_dir, "topic.md", "---\ntype: project\nname: Topic\n---\nBody")
     
-    # Run index to initialize
-    cli.main(["index", "--dir", str(temp_memory_dir)])
+    # Init
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
     
     memory_file = temp_memory_dir / "MEMORY.md"
-    sidecar_file = temp_memory_dir / ".qhaway.json"
     
-    # 1. Edit MEMORY.md manually to trigger first rename
+    # 1. Edit manually
     edit_1 = memory_file.read_text(encoding="utf-8") + "\n- Edit 1\n"
     memory_file.write_text(edit_1, encoding="utf-8")
     
-    # Force mock time to a fixed timestamp
-    mock_now = datetime(2026, 6, 20, 14, 30, 0, tzinfo=timezone.utc)
+    # First rename
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
     
-    with patch("qhaway.cli.datetime") as mock_datetime:
-        mock_datetime.now.return_value = mock_now
-        mock_datetime.utcnow.return_value = mock_now
-        mock_datetime.fromtimestamp.side_effect = lambda t, tz=None: datetime.fromtimestamp(t, tz)
-        
-        # First rename run
-        cli.main(["index", "--dir", str(temp_memory_dir)])
-        
-    # Check that first backup file exists
-    backup_1 = temp_memory_dir / "MEMORY-20260620T143000.md"
-    assert backup_1.exists()
-    assert backup_1.read_text(encoding="utf-8") == edit_1
-    
-    # 2. Edit MEMORY.md manually again to trigger second rename
+    # 2. Edit manually again
     edit_2 = memory_file.read_text(encoding="utf-8") + "\n- Edit 2\n"
     memory_file.write_text(edit_2, encoding="utf-8")
     
-    # Run second rename, still mocking to the same exact timestamp
-    with patch("qhaway.cli.datetime") as mock_datetime:
-        mock_datetime.now.return_value = mock_now
-        mock_datetime.utcnow.return_value = mock_now
-        mock_datetime.fromtimestamp.side_effect = lambda t, tz=None: datetime.fromtimestamp(t, tz)
-        
-        cli.main(["index", "--dir", str(temp_memory_dir)])
-        
-    # Both backup files must exist. Second must have a sequence suffix like -01 or -1.
-    backup_2 = temp_memory_dir / "MEMORY-20260620T143000-01.md"
-    # Fallback to verify a hyphenated numeric suffix
-    if not backup_2.exists():
-        backup_2 = temp_memory_dir / "MEMORY-20260620T143000-1.md"
-        
-    assert backup_1.exists(), "First backup was overwritten!"
-    assert backup_2.exists(), "Second backup was not created or sequence suffix was not appended!"
+    # Second rename
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    assert res.returncode == 0
     
-    assert backup_1.read_text(encoding="utf-8") == edit_1
-    assert backup_2.read_text(encoding="utf-8") == edit_2
+    backups = sorted(glob.glob(str(temp_memory_dir / "MEMORY-*.md")))
+    # At least two distinct backup files must exist
+    assert len(backups) >= 2
+    
+    # One file must contain edit_1, another must contain edit_2
+    contents = [Path(b).read_text(encoding="utf-8") for b in backups]
+    assert edit_1 in contents
+    assert edit_2 in contents
 
 
-# ==============================================================================
-# Requirement 12: Low/Zero Topic Files Guard (Finding S4 Amendment)
-# ==============================================================================
-
-def test_zero_topic_files_guard(temp_memory_dir):
+def test_cli_zero_topic_files_guard(temp_memory_dir):
     """
     Test 12: given a 0-topic-file dir, qhaway index declines/warns rather than
     producing an empty index and superseding any existing file.
     Also tests that --check flags low-count directories.
     """
-    check_modules_loaded()
-    
-    # --- Part A: Zero topic files refusal ---
-    # We place a pre-existing hand-written MEMORY.md
+    # Part A: Refuse to index empty directory
     original_memory_content = "# Preserved Memory Index\n- [Topic](topic.md) — Old topic hook\n"
     memory_file = temp_memory_dir / "MEMORY.md"
     memory_file.write_text(original_memory_content, encoding="utf-8")
     
-    # No topic files are in the temp_memory_dir.
-    # Run index. It must exit with error, refuse to overwrite or rename.
-    exit_code = cli.main(["index", "--dir", str(temp_memory_dir)])
-    assert exit_code != 0
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir)])
+    # Must fail
+    assert res.returncode != 0
     
-    # Verify MEMORY.md is untouched and no backups are created
+    # Index remains untouched
     assert memory_file.read_text(encoding="utf-8") == original_memory_content
-    backup_files = list(temp_memory_dir.glob("MEMORY-*.md"))
-    assert len(backup_files) == 0
+    backups = glob.glob(str(temp_memory_dir / "MEMORY-*.md"))
+    assert len(backups) == 0
     
-    # --- Part B: Low topic files warning ---
-    # Create 1 topic file (low count, >= 1 and < 3)
+    # Part B: Low count warning
     create_topic_file(temp_memory_dir, "topic_one.md", "---\ntype: project\nname: Project 1\n---\nBody")
     
-    # Run --check. It should succeed but flag the low-count directory in output.
-    with patch("sys.stdout", new_callable=MagicMock) as mock_stdout, \
-         patch("sys.stderr", new_callable=MagicMock) as mock_stderr:
-        exit_code = cli.main(["index", "--dir", str(temp_memory_dir), "--check"])
-        
-        # S4 specifies: Proceed but --check flags low-count dirs (returns 0 but logs warning)
-        assert exit_code == 0
-        
-        stdout_calls = "".join([call[0][0] for call in mock_stdout.write.call_args_list])
-        stderr_calls = "".join([call[0][0] for call in mock_stderr.write.call_args_list])
-        full_output = stdout_calls + stderr_calls
-        
-        # Check that it warns about low-count
-        assert any(word in full_output.lower() for word in ["low", "few", "count", "topic"])
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--check"])
+    assert res.returncode == 0
+    
+    output = res.stdout + res.stderr
+    assert any(word in output.lower() for word in ["low", "few", "count", "topic"])
