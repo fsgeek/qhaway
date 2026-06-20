@@ -111,12 +111,13 @@ truncated one. The files stay the write surface; qhaway is the derived read laye
    derived index. Enforced by test 8. (This also *simplifies* (D): rename happens
    only on a genuine human edit, never on qhaway's own output.)
    - **How determinism is achieved (the clause idempotence actually rests on):**
-     DuckDB does not guarantee row order without an explicit `ORDER BY`, and the
-     recency sort key (`date_hint → origin_session → mtime`) is not by itself total
-     — two files with identical `date_hint` and identical `mtime` could swap
-     between runs and break byte-identity. Therefore **every ordering ends in a
-     final tiebreak on `filename`** (the PK, unique by construction), so the sort
-     is total and run-invariant. Without this, idempotence fails silently in
+     DuckDB does not guarantee row order without an explicit `ORDER BY`, and **any**
+     recency sort key is not by itself total — whatever recency tiers lead (the
+     lead order is deferred; see projection rule step 4), any of them can tie (two
+     files written in the same second; two undated files), and a tie that isn't
+     broken deterministically could swap between runs and break byte-identity.
+     Therefore **every ordering ends in a final tiebreak on `filename`** (the PK,
+     unique by construction), so the sort is total and run-invariant. Without this, idempotence fails silently in
      exactly the way (D) punishes hardest (rename-every-run).
 8. **Stop the leak at the source: the harness memory instruction changes.** The
    accretion leak (constraint 3) exists *only because* the live memory instruction
@@ -226,18 +227,48 @@ can never itself overflow the budget):
    Test 10 pins this: a corpus whose `user`+`feedback` alone exceed budget still
    yields a MEMORY.md under budget, with the omission declared.
 4. Fill remaining budget with `project`/`reference` by **recency**.
-   - Sort key: `date_hint` if parseable, else `origin_session` ordering, else
-     **file mtime** as the fallback, **then `filename` as the final tiebreak**.
-     The `date_hint → origin_session → mtime` chain is NOT total on its own — two
-     files can share `date_hint` AND `mtime` (same session/commit, written in the
-     same second), and DuckDB does not guarantee row order without a total
-     `ORDER BY`, so such a pair could swap between runs and break byte-identity →
-     (D) renames on a no-change run (the per-run leak constraint 7 calls
-     catastrophic). `filename` is the PK — unique and run-invariant by construction
-     — so appending it makes the sort **total, not total-if-no-ties.** This is the
-     clause idempotence (constraint 7 / test 8) actually rests on.
+   - **What is PINNED (idempotence-critical, do not defer):** `filename` is the
+     **final, terminal tiebreak**. `filename` is the PK — unique and run-invariant
+     by construction — so whatever recency tiers precede it, appending `filename`
+     last makes the sort **total, not total-if-no-ties.** This is the clause
+     idempotence (constraint 7 / test 8) actually rests on: any recency signal
+     (`date_hint`, `origin_session`, `mtime`) can produce ties (two files written in
+     the same second; two undated files), and DuckDB does not guarantee row order
+     without a total `ORDER BY`, so a tie that isn't broken deterministically swaps
+     between runs → byte-different MEMORY.md → (D) renames on a no-change run (the
+     per-run leak constraint 7 calls catastrophic). `filename`-last closes that.
+   - **What is OPEN (the recency-tier order — deliberately deferred):** which
+     recency signal *leads* (`date_hint`-first vs. `origin_session`-first vs.
+     `mtime`-first) is **not yet decided**, and the spec does not force it. The
+     corpus sweep (corpus-findings **S1**) measured the signals — `date_hint` 7%,
+     `origin_session` 56%, `mtime` 100% — but that measurement does **not** by
+     itself prescribe an order: a sparse signal (`date_hint`) may still be the
+     *best* lead precisely because it is *deliberately* set (dated handoffs are
+     high-salience), whereas `mtime` is incidental and transfer-fragile (S1's
+     scp/rsync boundary). This is a salience question, and per the project's
+     anti-premature-collapse principle, **salience tuning is deferred** (see the end
+     of this section). The implementer/tester resolve the lead-tier order during
+     the build — ideally empirically (run candidate orders over the real corpora;
+     the corpus is the referee), not by argument. Until then, only `filename`-last
+     is contractual. **NOTE:** earlier drafts and corpus-findings S1 gestured at a
+     specific lead order; treat those as *proposals*, not as the pinned contract —
+     the pinned contract is `filename`-terminal + recency-lead-TBD.
 5. Emit the reserved footer: one declared line per omitted `content_type`
    ("+N project memories not shown; `qhaway index --type project`").
+
+**Footer line format (PINNED — this is a machine contract, exact).** Each declared
+footer line is exactly:
+`+<N> <facet> memories <verb>; \`qhaway index --<flag> <value>\``
+where `<N>` carries a **leading `+`** (it is a count-of-additional, not a total),
+`<verb>` is `not shown` for budget-omitted content_types and `hidden` for
+design-excluded tombstones, and the trailing backticked command is the exact
+recovery invocation. Examples:
+`+47 project memories not shown; \`qhaway index --type project\`` /
+`+2 superseded memories hidden; \`qhaway index --status superseded\``.
+The `+` is part of the contract: any parser counting omissions strips a leading
+`+`, so emitting the bare count would break the (shown + declared-omitted) ==
+total accounting (test 2). Pinned here because the format was previously only
+shown-by-example, leaving a cold author free to emit `N` or `+N` inconsistently.
 
 **Tombstones are excluded by design, not by budget — and that exclusion is itself
 declared.** Superseded nodes are live-on-disk files, so omitting them silently
