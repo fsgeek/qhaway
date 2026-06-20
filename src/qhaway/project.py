@@ -99,9 +99,6 @@ def _compare_rows(left: dict[str, Any], right: dict[str, Any]) -> int:
         cmp = _compare_desc_string(left.get(key), right.get(key))
         if cmp:
             return cmp
-    mtime_cmp = _compare_desc_number(float(left.get("mtime") or 0.0), float(right.get("mtime") or 0.0))
-    if mtime_cmp:
-        return mtime_cmp
     return (left["file"] > right["file"]) - (left["file"] < right["file"])
 
 
@@ -119,10 +116,6 @@ def _compare_desc_string(left: Any, right: Any) -> int:
     left_text = str(left)
     right_text = str(right)
     return (right_text > left_text) - (right_text < left_text)
-
-
-def _compare_desc_number(left: float, right: float) -> int:
-    return (right > left) - (right < left)
 
 
 def _entry_line(row: dict[str, Any]) -> str:
