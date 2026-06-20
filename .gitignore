@@ -9,3 +9,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# ephemeral recon scaffolding (test-side, not preserved)
+tmp/
