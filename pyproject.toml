@@ -1,0 +1,34 @@
+[project]
+name = "qhaway"
+version = "0.1.0"
+description = "A truncation-proof projection of a Markdown memory index: regenerate MEMORY.md to fit the loader's budget and declare what it sets aside, instead of being silently cut."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+authors = [{ name = "Tony", email = "fsgeek@cs.ubc.ca" }]
+keywords = ["memory", "index", "markdown", "llm", "agent", "duckdb"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "duckdb",
+    "pyyaml",
+]
+
+[project.scripts]
+qhaway = "qhaway.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10,<0.11"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+
+# Publishing (deferred — no release until the implementation exists and its tests
+# pass). When ready, tokens are read from the environment at publish time and are
+# NEVER stored in this file or committed:
+#   TestPyPI: uv publish --index testpypi   (token: PYPI_DEPLOY_KEY_TEST)
+#   PyPI:     uv publish                     (token: PYPI_DEPLOY_KEY_REAL)

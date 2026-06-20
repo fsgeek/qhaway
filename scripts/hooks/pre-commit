@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# qhaway code/test separation hook (approach A: author-blind, structural).
+#
+# Refuses any commit that stages BOTH implementation code and test files.
+# The point is not policing — it is to make the authorship separation
+# (Claude implements; validating tests authored separately) a VISIBLE event:
+# a refused commit is a stop-and-look, where silent erosion would otherwise
+# pass unremarked. Bypassable with --no-verify ON PURPOSE: the bypass must be
+# a deliberate, on-the-record act, not the default.
+#
+# A file is a TEST if its path matches tests/ , test_*.py , or *_test.py.
+# A file is CODE if it is a *.py that is not a test (and not under scripts/).
+# Everything else (docs, specs, config, pyproject.toml) is neither — never blocks.
+
+set -euo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+code=""
+test=""
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    case "$f" in
+        *.py) : ;;            # a python file — classify below
+        *) continue ;;        # non-python — neither code nor test
+    esac
+    case "$f" in
+        scripts/*) continue ;;                      # tooling, not package code
+        tests/*|*/test_*.py|test_*.py|*_test.py)
+            test="${test}${f}"$'\n' ;;
+        *)
+            code="${code}${f}"$'\n' ;;
+    esac
+done <<< "$staged"
+
+if [ -n "$code" ] && [ -n "$test" ]; then
+    echo "✗ qhaway: commit mixes implementation code and tests." >&2
+    echo >&2
+    echo "  Code and tests must land in SEPARATE commits (authorship separation:" >&2
+    echo "  implementation and its validating tests are authored — and signed —" >&2
+    echo "  independently). This keeps each commit attributable to one role." >&2
+    echo >&2
+    echo "  staged CODE:" >&2
+    printf '%s' "$code" | sed 's/^/    /' >&2
+    echo "  staged TESTS:" >&2
+    printf '%s' "$test" | sed 's/^/    /' >&2
+    echo >&2
+    echo "  Split into two commits, or (deliberately, on the record) bypass with" >&2
+    echo "  git commit --no-verify." >&2
+    exit 1
+fi
+
+exit 0
