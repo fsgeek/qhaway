@@ -314,7 +314,7 @@ MCP, CLI).
 
 | Unit | Purpose | Depends on |
 |---|---|---|
-| `server.py` (new) | MCP server exposing `remember` + `recall`. Thin: composes/validates args, calls `reconcile`/`project_slice`, returns strings. | reconcile, project, parse |
+| `server.py` (new) | MCP server exposing `remember` + `recall`. Thin: validates/composes args; `remember` writes a file then `reconcile`; `recall` calls `project_slice_with_overflow` and returns the markdown. Success → string; failure → **structured MCP error** (C-10). | reconcile, project, parse |
 | `reconcile.py` (new) | The one shared sync op: incremental `(mtime_ns,size)` topic reconcile (bulk-load db state, in-memory compare, upsert+edge-refresh changed, cascade-delete gone) + (D)-checked, born-read-only, self-healing MEMORY.md redirect. Houses the born-read-only atomic-replace helper and the `remember` hyphen-slugify / safe-YAML composer. | model, parse, project |
 | `cli.py` (extend) | Add `qhaway reconcile` (startup-hook entry; `init` is the same op on an empty dir) and `qhaway serve` (launch MCP server; **reconciles once at startup**, C-3; resolves the memory dir via the tiered chain, OQ-2). `index` becomes a **deprecated alias for reconcile** (OQ-3) — one write path, MEMORY.md always the redirect. | reconcile, server |
 | `model.py` (rework) | **DuckDB → SQLite (WAL).** Add `mtime_ns` + `size` columns to `nodes`. Provide incremental upsert/delete in a `BEGIN IMMEDIATE` transaction (C-5), `PRAGMA busy_timeout` (C-4), a `fetch_nodes(conn)` introspection helper (C-2), and a persistent connection factory for `<memory_dir>/.qhaway.db`. | sqlite3 (stdlib), parse |
@@ -339,13 +339,17 @@ recall(facets?) →
 
 ## Error handling
 
-Fail loud, never silently. `remember`: refuse on slug collision that can't be
-resolved, on unreadable memory dir, on db build failure — return an error string,
-never a false success. Invalid `type` (not in the four) is rejected at the tool
-boundary (the schema enum), not coerced. `recall`: a db build failure surfaces;
-an empty result is a valid empty slice, not an error. The fence: if the
-read-only swap fails, report it — do not leave MEMORY.md in a half-written state
-(atomic replace guarantees all-or-nothing).
+Fail loud, never silently — and (C-10) **MCP tool failures are structured tool
+errors, never success strings.** A returned string from an MCP tool is normal
+*successful* output; an error returned as a string can be mistaken for a
+confirmation, defeating "fail loud." So `remember`/`recall` **raise/return a
+structured MCP error** on: slug collision that can't be resolved, unreadable memory
+dir, DB failure, write failure. Invalid `type` (not in the four) is rejected at the
+tool boundary (the schema enum), not coerced. String returns are reserved for
+*success* (a `remember` confirmation, a `recall` rendered slice). An empty `recall`
+result is a valid empty slice, not an error. The CLI surface uses stderr + non-zero
+exit (not tool errors). The fence: if the read-only swap fails, surface it — atomic
+replace guarantees all-or-nothing, so MEMORY.md is never left half-written.
 
 ## Testing (TDD — falsifiable criteria)
 
@@ -437,11 +441,14 @@ A second adversarial pass (`...-codex-feedback.md`) found contradictions the fir
 missed. All findings accepted; resolutions pinned here (tests above):
 
 - **C-1 — `project_slice` signature vs. regression guard (was self-contradictory).**
-  `project_slice(...) -> str` stays the **stable MVP public API** (the existing
-  suite and CLI keep treating it as a string, regression guard intact). A **sibling**
+  `project_slice(...) -> str` stays the **stable engine API** — the retargeted cure
+  tests (see "Regression guard", FUP-1) call it directly as a string. A **sibling**
   `project_slice_with_overflow(...) -> ProjectionResult` carries `(markdown,
   overflow)` for the MCP path. F-7's overflow metadata lives in the sibling; the
-  string API is untouched. (Supersedes the earlier "amend the tests" wording.)
+  string API is untouched. (Supersedes the earlier "amend the tests" wording. Note:
+  the *CLI* `index` no longer calls projection-to-MEMORY.md — it is the reconcile
+  alias, OQ-3 — so "stable API" here means the Python signature the tests target,
+  not a CLI contract.)
 - **C-2 — `DESCRIBE` is DuckDB-only.** `project.py` currently calls `DESCRIBE
   nodes`; SQLite has no `DESCRIBE`. Introspection moves behind one model-layer
   helper `fetch_nodes(conn) -> list[dict]` (using `PRAGMA table_info(nodes)` /
@@ -533,15 +540,29 @@ missed. All findings accepted; resolutions pinned here (tests above):
   thickening this one. SQLite FTS5 is the only in-qhaway search escalation
   considered, and only if prose search actually appears.
 
-## Regression guard (the MVP must stay green)
+## Regression guard — preserve the cure invariants, retarget the tests (FUP-1)
 
-The backend swap and incremental rework touch tested MVP code. **The existing
-`tests/test_qhaway.py` suite must pass unchanged after the SQLite port** — made
-achievable by C-1 (the public `project_slice(...) -> str` signature is preserved;
-overflow lives in a sibling, so no test rewrites for the signature). The suite pins
-the truncation cure: budget, declared omissions, idempotence, (D) preservation,
-tombstone exclusion. Any test that asserts a DuckDB-specific behavior (rather than
-a cure invariant) is updated to the SQLite equivalent; no cure invariant is
-weakened to make the port pass. If a port change forces a cure test to change, that
-is a signal to stop and review, not to edit the test.
+**What is protected is the cure's *invariants*, not the test file verbatim.** The
+first draft promised "`tests/test_qhaway.py` passes unchanged," but that predated
+two design decisions that necessarily move the tests:
+
+- **The backend swap** (DuckDB → SQLite) updates any test asserting a *DuckDB-specific
+  behavior* (vs. a cure invariant) to its SQLite equivalent.
+- **`index` → reconcile alias (OQ-3)** retires `index`'s full-projection *CLI
+  surface*. The ~15 existing `qhaway index` tests assert *projection-engine*
+  invariants (budget overflow, declared omissions, `--type`/`--role`/`--status`
+  slices, `--dry-run`, (D) preservation, idempotence, tombstone exclusion, orphan
+  visibility) — but they reach the engine *through* the old `index` CLI. Those
+  invariants **still hold and still matter**: they are exactly what `recall` (via
+  `project_slice` / `project_slice_with_overflow`) must guarantee, since `recall` is
+  now the engine's consumer. So they are **retargeted** from `qhaway index` to
+  `recall`/`project_slice` (and, where they test the redirect/(D)/orphan paths, to
+  `reconcile`), not deleted.
+
+The line that does NOT move: **no cure invariant is weakened.** Budget-fit,
+declared-omission accounting, idempotence/(D), and tombstone exclusion must pass on
+the new surfaces exactly as they did on `index`. If a port or retarget *changes a
+cure invariant's meaning* (not just its call site), that is a stop-and-review
+signal, not a license to soften the assertion. The design changed; the tests follow
+the design; the cure's guarantees are the thing held fixed across the change.
 ```
