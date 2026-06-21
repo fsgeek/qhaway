@@ -103,6 +103,48 @@ def test_unit_parse_memory_file(temp_memory_dir):
     assert "This is the body." in result["body"]
 
 
+def test_unit_parse_tombstone_real_prefix_form(temp_memory_dir):
+    """
+    Unit Test (regression): real tombstone `name` fields are PREFIX-form redirect
+    strings, e.g. "SUPERSEDED — see other.md", not the bare word "SUPERSEDED".
+    The live hamutay corpus has 14 such tombstones; all leaked into the projected
+    MEMORY.md as status="live" because detection used exact set-membership.
+    See docs/defects/2026-06-20-tombstone-detection-exact-match.md.
+
+    This test is ADDED (not a modification of an existing test) — the suite had
+    no prefix-form case, only bare-word `name: SUPERSEDED` fixtures, which is why
+    19 tests passed green while the bug shipped. It goes RED against the current
+    parse._status and GREEN once detection prefix-matches.
+    """
+    check_modules_loaded()
+
+    # The REAL shape from the corpus (the whole redirect string is the name).
+    superseded = create_topic_file(
+        temp_memory_dir,
+        "instructions_for_next_20260327.md",
+        "---\n"
+        "name: SUPERSEDED — see instructions_for_next_20260330.md\n"
+        "type: project\n"
+        "---\n"
+        "Old consolidated handoff, superseded.\n",
+    )
+    deleted = create_topic_file(
+        temp_memory_dir,
+        "obsolete_note.md",
+        "---\nname: DELETED — folded into project_x.md\ntype: project\n---\nGone.\n",
+    )
+
+    superseded_result = parse.parse_memory_file(str(superseded))
+    deleted_result = parse.parse_memory_file(str(deleted))
+
+    assert superseded_result["status"] == "superseded", (
+        "prefix-form 'SUPERSEDED — see ...' must be detected as superseded"
+    )
+    assert deleted_result["status"] == "superseded", (
+        "prefix-form 'DELETED — ...' must be detected as superseded"
+    )
+
+
 def test_unit_parse_fallback_and_tolerance(temp_memory_dir):
     """
     Unit Test: Verifies tolerance to malformed/unquoted colon frontmatter.
