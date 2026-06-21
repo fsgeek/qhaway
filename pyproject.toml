@@ -13,6 +13,8 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
+    "duckdb",
+    "mcp[cli]>=1.28.0",
     "pyyaml",
 ]
 
