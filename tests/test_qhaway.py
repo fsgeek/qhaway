@@ -511,19 +511,17 @@ def test_unit_reconcile_sqlite_fallback(temp_memory_dir):
     check_modules_loaded()
     
     # We patch sqlite3 connection execution of PRAGMA journal_mode=WAL; to fail
+    class FallbackConnection(sqlite3.Connection):
+        def execute(self, sql, *exec_args, **kwargs):
+            if "journal_mode=WAL" in sql:
+                raise sqlite3.OperationalError("Mock WAL error (e.g. filesystem shared memory unsupported)")
+            return super().execute(sql, *exec_args, **kwargs)
+
     original_connect = sqlite3.connect
     
     def mock_connect(*args, **kwargs):
-        conn = original_connect(*args, **kwargs)
-        orig_execute = conn.execute
-        
-        def mock_execute(sql, *exec_args):
-            if "journal_mode=WAL" in sql:
-                raise sqlite3.OperationalError("Mock WAL error (e.g. filesystem shared memory unsupported)")
-            return orig_execute(sql, *exec_args)
-            
-        conn.execute = mock_execute
-        return conn
+        kwargs["factory"] = FallbackConnection
+        return original_connect(*args, **kwargs)
         
     with patch("sqlite3.connect", side_effect=mock_connect):
         with pytest.raises(Exception) as excinfo:
@@ -779,6 +777,7 @@ def test_cli_non_destructive_edit_handling(temp_memory_dir):
     
     # Hand-edit the redirect
     edited_content = original_content + "\nStray manual changes\n"
+    os.chmod(memory_file, 0o644)
     memory_file.write_text(edited_content, encoding="utf-8")
     
     # Reconcile again -> triggers preserve
@@ -906,11 +905,13 @@ def test_cli_preservation_cant_self_destruct(temp_memory_dir):
     
     # 1. Edit manually
     edit_1 = memory_file.read_text(encoding="utf-8") + "\n- Edit 1\n"
+    os.chmod(memory_file, 0o644)
     memory_file.write_text(edit_1, encoding="utf-8")
     cli.reconcile(str(temp_memory_dir))
     
     # 2. Edit manually again
     edit_2 = memory_file.read_text(encoding="utf-8") + "\n- Edit 2\n"
+    os.chmod(memory_file, 0o644)
     memory_file.write_text(edit_2, encoding="utf-8")
     cli.reconcile(str(temp_memory_dir))
     
