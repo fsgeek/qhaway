@@ -54,14 +54,34 @@ decisions:
   readers + one writer without readers blocking, which fits "MCP `recall` reads
   while a hook/CLI writes" far better than DuckDB's single-writer model. This is
   the swappable-backend seam (above) exercised early and toward stdlib.
+- **WAL is required, not best-effort (G-2 — MVP filesystem limitation).** WAL needs
+  a shared-memory file (`-shm`/`mmap`), which fails on some network mounts (NFS/SMB),
+  certain Docker/VM shared folders, and similar. qhaway **requires WAL and fails loud
+  with a clear message** if it cannot initialize ("memory dir is on a filesystem that
+  doesn't support SQLite WAL; move it to local storage") — it does **not** silently
+  fall back to a rollback journal. A silent fallback would give *different concurrency
+  semantics per filesystem*, invisible until a concurrency bug bit only on the
+  fallback platform — the exact hidden-two-modes divergence this project kills
+  everywhere. One mode, one named limitation. Wider filesystem support is a deliberate
+  future-version expansion, not an MVP silent-degrade.
 - **Persistent, co-located:** the index lives at `<memory_dir>/.qhaway.db`
   (gitignored; excluded from `topic_files` alongside `MEMORY.md`/`MEMORY-*`/
   `.qhaway.json`). The index belongs *with* what it indexes: each project's memory
   dir is a self-contained unit (files + index + redirect + sidecar), so the
   multi-project reality (governance, yanantin, hamutay each have separate memory)
   Just Works — separate dirs, separate co-located indexes, no global
-  project→db registry to drift. Rebuildable by deletion: `rm .qhaway.db` and the
-  next reconcile rebuilds it from the files (files remain the source of truth).
+  project→db registry to drift. **Rebuildable by deletion — but delete all three WAL
+  files together (G-1):** `rm -f .qhaway.db .qhaway.db-wal .qhaway.db-shm`, then the
+  next reconcile rebuilds from the files (files remain the source of truth). Deleting
+  only `.qhaway.db` can leave a stale `-wal` that SQLite recovers from on next open →
+  corruption/lock. Any reset helper qhaway ships must remove all three.
+- **Schema drift self-heals from files (G-3).** The schema carries a `PRAGMA
+  user_version`. On connect, if the stored version mismatches the code's expected
+  version (a future column add, etc.), qhaway **closes the connection, deletes the db
+  files (all three), and rebuilds a fresh schema from the topic files** — no migration
+  tooling, because the db is a derived view, not truth. A schema-drift `OperationalError`
+  is treated the same way (rebuild, don't crash). This is the derived-index thesis
+  paying off: migrations are free when the source of truth is the files.
 
 ### FTS escalation ladder (rationale — do not skip a rung the wrong way)
 
@@ -150,14 +170,20 @@ recall(
      `role="review"` and pollute the role namespace. Hyphens (`review-feedback.md`)
      yield `role=None`; an explicit role is opt-in only by prepending `role_`
      (e.g. `instructions_review-feedback.md`). Lowercase, strip non-`[a-z0-9-]`,
-     collapse repeats. Collision → numeric suffix; never overwrite an existing topic
-     file.
+     collapse repeats. Collision → `O_CREAT|O_EXCL` exclusive create with a numeric
+     suffix; never overwrite an existing topic file. **The suffix loop is hard-capped
+     (e.g. 100 attempts) and fails loud** if it can't allocate a unique name (G-7) —
+     no `while True` that could hang on a locked/full directory. (Mirrors the existing
+     `_backup_path` cap in `cli.py`.)
    - **Emit frontmatter via `yaml.safe_dump`, not string concatenation** (F-4).
      `title`/`description` are model-generated freeform strings; a colon, quote, or
      newline would corrupt raw-concatenated frontmatter (and `parse.py` would fall
      to its tolerant parser and mangle it). Safe-dump `{name, type, description?}`
      so any special characters are correctly quoted/escaped.
-   - Write `body`; append any `links` as `[[slug]]` text.
+   - Write `body`, then append `links` with a **clean boundary (G-6):**
+     `body.rstrip()` + `"\n\n"` + one `[[slug]]` per line + a trailing newline — never
+     joined onto the body's last sentence. All writes use explicit `encoding="utf-8"`
+     (G-8).
 2. Write the topic file (normal mode — topic files are the writable surface).
 3. Call the shared `reconcile()` (see below) so the index reflects the new file
    within-session. Reconcile is incremental and cheap, so this is one changed
@@ -315,10 +341,10 @@ MCP, CLI).
 
 | Unit | Purpose | Depends on |
 |---|---|---|
-| `server.py` (new) | MCP server exposing `remember` + `recall`. Thin: validates/composes args; `remember` writes a file then `reconcile`; `recall` calls `project_slice_with_overflow` and returns the markdown. Success → string; failure → **structured MCP error** (C-10). | reconcile, project, parse |
+| `server.py` (new) | MCP server exposing `remember` + `recall`. Thin: validates/composes args; `remember` writes a file then `reconcile`; `recall` calls `project_slice_with_overflow` and returns the markdown. Success → string; failure → **structured MCP error** (C-10). **stdout is reserved strictly for JSON-RPC (G-5):** all init/resolution/error output goes to `stderr` and the process exits non-zero — a stray stdout write (traceback, dir-resolution failure) corrupts the protocol stream and crashes the client. | reconcile, project, parse |
 | `reconcile.py` (new) | The one shared sync op: incremental `(mtime_ns,size)` topic reconcile (bulk-load db state, in-memory compare, upsert+edge-refresh changed, cascade-delete gone) + (D)-checked, born-read-only, self-healing MEMORY.md redirect. Houses the born-read-only atomic-replace helper and the `remember` hyphen-slugify / safe-YAML composer. | model, parse, project |
 | `cli.py` (extend) | Add `qhaway reconcile` (startup-hook entry; `init` is the same op on an empty dir), `qhaway serve` (launch MCP server; **reconciles once at startup**, C-3; resolves the memory dir via the tiered chain, OQ-2), and **`qhaway check`** (read-only inspection: dangling links, would-overflow, orphan `MEMORY-<ts>.md` count — SFUP-1). `index` becomes a **deprecated alias for reconcile** (OQ-3); `index --check` becomes a thin deprecated alias for `check` (one release, then removed). One write path; MEMORY.md always the redirect. | reconcile, server |
-| `model.py` (rework) | **DuckDB → SQLite (WAL).** Add `mtime_ns` + `size` columns to `nodes`. Provide incremental upsert/delete in a `BEGIN IMMEDIATE` transaction (C-5), `PRAGMA busy_timeout` (C-4), a `fetch_nodes(conn)` introspection helper (C-2), and a persistent connection factory for `<memory_dir>/.qhaway.db`. | sqlite3 (stdlib), parse |
+| `model.py` (rework) | **DuckDB → SQLite (WAL, required — G-2).** Add `mtime_ns` + `size` columns to `nodes`; `PRAGMA user_version` + rebuild-on-drift (G-3). `edges` gets `PRIMARY KEY (src_file, dst_slug, kind)` + `INDEX(dst_slug)` (G-4 — dedups edges, O(log N) lookup for the C-6 delete and `check` scan; **no FK cascade** — redundant with reconcile's explicit edge delete and guards an architecturally-impossible path). Incremental upsert/delete in a `BEGIN IMMEDIATE` transaction (C-5), `PRAGMA busy_timeout` (C-4), `fetch_nodes(conn)` introspection (C-2), persistent connection factory for `<memory_dir>/.qhaway.db`. All file I/O explicit `encoding="utf-8"` (G-8). | sqlite3 (stdlib), parse |
 | `project.py` (port) | SQL ported to SQLite via `fetch_nodes` (no `DESCRIBE`, C-2). `project_slice(...) -> str` **unchanged** (stable MVP API, C-1); new sibling `project_slice_with_overflow(...) -> ProjectionResult` carries `(markdown, overflow)` (F-7) for the MCP path. | sqlite3 (stdlib) |
 | `parse.py` | **Unchanged.** Reused wholesale. | — |
 
@@ -409,8 +435,9 @@ replace guarantees all-or-nothing, so MEMORY.md is never left half-written.
     reports no spurious dangling links from the removed node.
 18. **Persistent db survives across processes & rebuilds by deletion:** an index
     built in one process is read by a separate process via `recall` (persistence);
-    `rm .qhaway.db` followed by `reconcile` reproduces an equivalent index from the
-    files (files remain truth). `.qhaway.db` is excluded from `topic_files`.
+    `rm` of **all three** WAL files (G-1) followed by `reconcile` reproduces an
+    equivalent index from the files (files remain truth). `.qhaway.db`/`-wal`/`-shm`
+    are excluded from `topic_files` and gitignored.
 19. **`serve` reconciles once at startup (C-3):** starting `qhaway serve` with no
     pre-existing `.qhaway.db` and then calling `recall` returns the current corpus —
     the server runs exactly one `reconcile` before accepting tool calls; `recall`
@@ -435,6 +462,24 @@ replace guarantees all-or-nothing, so MEMORY.md is never left half-written.
 25. **`links` normalize to canonical stems (C-11):** `links=["Foo Bar",
     "foo-bar.md", "[[foo-bar]]"]` all emit `[[foo-bar]]`; the resulting edges
     resolve under `--check` when the target exists.
+26. **Schema drift triggers rebuild-from-files (G-3):** a `.qhaway.db` written with a
+    stale `user_version` (or missing an expected column) is detected on connect and
+    transparently rebuilt from the topic files; no `OperationalError` escapes, and the
+    resulting index matches a fresh build.
+27. **`edges` rejects duplicate references (G-4):** indexing a file that declares the
+    same `[[slug]]` twice yields a single `edges` row (the compound PK dedups), and a
+    node-drop + reconcile leaves zero edges for that `src_file` via the explicit C-6
+    delete (no FK needed).
+28. **Link append never joins onto prose (G-6):** `remember(body="last sentence",
+    links=["x"])` produces a file whose body ends `last sentence\n\n[[x]]\n` — the
+    link is on its own line, not concatenated to the sentence.
+29. **Suffix loop is bounded (G-7):** with the unique-name space artificially
+    exhausted, `remember` fails loud (tool error) after the hard cap rather than
+    hanging.
+30. **WAL-unavailable fails loud (G-2):** when WAL cannot initialize, qhaway exits
+    with a clear stderr message and does **not** silently run on a rollback journal.
+    *(Test as feasible — may be a unit test stubbing the PRAGMA failure rather than a
+    real exotic filesystem.)*
 
 ## Second review (Codex) — resolutions
 
@@ -537,6 +582,43 @@ missed. All findings accepted; resolutions pinned here (tests above):
   homes:** the dangling-link, overflow-before-projection, and orphan-visibility tests
   retarget from `index --check` to `qhaway check` (they assert the same invariants on
   the new command; cf. the regression-guard retargeting, FUP-1).
+
+### Fourth review (Gemini) — resolved
+
+Gemini's pass targeted SQLite/filesystem/protocol *realities* (a different class
+than Codex's logical contradictions). All eight accepted; two refined:
+
+- **G-1 — WAL sidecar teardown.** Rebuild-by-deletion removes **all three** files
+  (`.qhaway.db`, `-wal`, `-shm`) together; deleting only the main db can leave a
+  stale `-wal` SQLite recovers from → corruption. Folded into the backend section and
+  any reset helper.
+- **G-2 — WAL required, fail loud (Tony's call, MVP limitation).** No silent fallback
+  to a rollback journal: that would give per-filesystem concurrency semantics
+  (hidden two-modes divergence). If WAL can't init, refuse with a clear "move the
+  memory dir to local storage" message. Wider filesystem support is a deliberate
+  future expansion. (Folded into backend section.)
+- **G-3 — schema-drift self-heal.** `PRAGMA user_version`; on mismatch or a
+  schema-drift `OperationalError`, delete the db files and rebuild from the topic
+  files. Free because the db is a derived view — no migration tooling. (Backend
+  section.)
+- **G-4 — `edges` PK + index, no FK (refined).** `PRIMARY KEY (src_file, dst_slug,
+  kind)` (dedups) + `INDEX(dst_slug)` (fast `check`/cleanup). **Declined** the
+  suggested `FOREIGN KEY ... ON DELETE CASCADE`: reconcile already deletes edges
+  explicitly on node-drop (C-6), so the FK is redundant, costs a `PRAGMA
+  foreign_keys=ON` on every connection, and imposes an insert-ordering constraint —
+  it would guard a path the single-shared-reconcile design forbids. (model.py row.)
+- **G-5 — MCP stdout discipline.** `serve` reserves stdout strictly for JSON-RPC;
+  all errors/traces/resolution-failures → stderr, exit non-zero. A stray stdout write
+  corrupts the protocol stream and crashes the client. Sharpens C-10 with the
+  stream-partition rule. (server.py row.)
+- **G-6 — link-append boundary.** `body.rstrip()` + `"\n\n"` + one `[[slug]]` per
+  line + trailing newline; never joined onto the body's last sentence. (`remember`
+  write path.)
+- **G-7 — suffix loop hard cap.** `O_CREAT|O_EXCL` suffix loop is bounded (≈100) and
+  fails loud, no `while True`. Mirrors the existing `_backup_path` cap. (`remember`
+  write path.)
+- **G-8 — explicit utf-8.** All new file I/O sets `encoding="utf-8"` (matches the
+  existing code's discipline; LLM text carries emoji/smart-quotes/non-ASCII).
 
 ## Out of scope (YAGNI / anti-sprawl — named, not silently dropped)
 
