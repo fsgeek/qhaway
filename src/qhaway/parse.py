@@ -132,7 +132,12 @@ def _normalize_link(link: str) -> str:
     cleaned = link.strip().split("/", maxsplit=-1)[-1]
     if cleaned.endswith(".md"):
         cleaned = cleaned[:-3]
-    return cleaned
+    # Canonicalize toward the on-disk stem so a hand-authored [[My Cool Topic]]
+    # matches a remember-generated my-cool-topic.md. Lowercase + spaces→hyphens
+    # only; underscores are preserved because hand-authored stems keep them
+    # (e.g. reference_b.md). Without this the write side slugifies but the read
+    # side did not, and `check` falsely reported live links as dangling.
+    return cleaned.lower().replace(" ", "-")
 
 
 def _string_or_none(value: Any) -> str | None:

@@ -1,9 +1,12 @@
-"""Project a DuckDB memory index into a budgeted Markdown MEMORY.md."""
+"""Project a SQLite memory index into a budgeted Markdown MEMORY.md."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from functools import cmp_to_key
 from typing import Any
+
+from qhaway.model import fetch_nodes
 
 
 DEFAULT_BUDGET = 24_000
@@ -21,8 +24,7 @@ def project_slice(
 ) -> str:
     """Return a deterministic, budgeted Markdown projection."""
 
-    columns = _columns(db_conn)
-    rows = [_normalize_row(row, columns) for row in db_conn.execute("SELECT * FROM nodes").fetchall()]
+    rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
     filtered = [
         row
         for row in rows
@@ -70,13 +72,7 @@ def project_slice(
     return _fit_footer_only(_actual_footer(filtered, hidden_superseded), budget)
 
 
-def _columns(db_conn: Any) -> list[str]:
-    rows = db_conn.execute("DESCRIBE nodes").fetchall()
-    return [row[0] for row in rows]
-
-
-def _normalize_row(row: tuple[Any, ...], columns: list[str]) -> dict[str, Any]:
-    values = dict(zip(columns, row, strict=False))
+def _normalize_row(values: dict[str, Any]) -> dict[str, Any]:
     return {
         "file": values.get("file"),
         "name": values.get("name"),
@@ -87,7 +83,7 @@ def _normalize_row(row: tuple[Any, ...], columns: list[str]) -> dict[str, Any]:
         "origin_session": values.get("origin_session"),
         "date_hint": values.get("date_hint"),
         "body": values.get("body") or "",
-        "mtime": values.get("mtime") or 0.0,
+        "mtime_ns": values.get("mtime_ns") or 0,
     }
 
 
@@ -234,3 +230,73 @@ def _fit_footer_only(footer: str, budget: int) -> str:
         if _byte_len(proposed) <= budget:
             output = proposed
     return output
+
+
+@dataclass
+class Overflow:
+    """Structured overflow of a budgeted projection.
+
+    `omitted_counts` maps content_type -> count of nodes that matched the slice
+    filter but did not fit the budget. `superseded_count` is the number of
+    superseded nodes hidden from a live slice. Band counts (by origin_session /
+    date_hint) are computed and carried for the deferred dynamic-faceting step.
+    """
+
+    omitted_counts: dict = field(default_factory=dict)
+    superseded_count: int = 0
+    by_origin_session: dict = field(default_factory=dict)
+    by_date_hint: dict = field(default_factory=dict)
+
+
+@dataclass
+class ProjectionResult:
+    markdown: str
+    overflow: Overflow = field(default_factory=Overflow)
+
+
+def project_slice_with_overflow(
+    db_conn: Any,
+    budget: int,
+    content_type: str | None = None,
+    role: str | None = None,
+    status: str = "live",
+) -> ProjectionResult:
+    """Render the slice AND return structured overflow counts (C-1/F-7)."""
+    markdown = project_slice(db_conn, budget, content_type, role, status)
+    rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
+    filtered = [
+        row
+        for row in rows
+        if row["status"] == status
+        and (content_type is None or row["content_type"] == content_type)
+        and (role is None or row["role"] == role)
+    ]
+    omitted = [row for row in filtered if f"]({row['file']})" not in markdown]
+    omitted_counts: dict = {}
+    for row in omitted:
+        omitted_counts[row["content_type"]] = omitted_counts.get(row["content_type"], 0) + 1
+
+    superseded_count = sum(
+        1
+        for row in rows
+        if row["status"] == "superseded"
+        and status == "live"
+        and (content_type is None or row["content_type"] == content_type)
+        and (role is None or row["role"] == role)
+    )
+
+    overflow = Overflow(
+        omitted_counts=omitted_counts,
+        superseded_count=superseded_count,
+        by_origin_session=_band(omitted, "origin_session"),
+        by_date_hint=_band(omitted, "date_hint"),
+    )
+    return ProjectionResult(markdown=markdown, overflow=overflow)
+
+
+def _band(rows: list[dict[str, Any]], key: str) -> dict:
+    counts: dict = {}
+    for row in rows:
+        value = row.get(key) or "(none)"
+        counts[value] = counts.get(value, 0) + 1
+    return counts

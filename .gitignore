@@ -12,3 +12,9 @@ build/
 
 # ephemeral recon scaffolding (test-side, not preserved)
 tmp/
+
+# qhaway db artifacts (live inside memory dirs; guard against accidental in-repo dirs)
+.qhaway.db
+.qhaway.db-wal
+.qhaway.db-shm
+.qhaway.db.reset.lock
