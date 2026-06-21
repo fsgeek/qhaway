@@ -75,13 +75,29 @@ decisions:
   next reconcile rebuilds from the files (files remain the source of truth). Deleting
   only `.qhaway.db` can leave a stale `-wal` that SQLite recovers from on next open →
   corruption/lock. Any reset helper qhaway ships must remove all three.
-- **Schema drift self-heals from files (G-3).** The schema carries a `PRAGMA
-  user_version`. On connect, if the stored version mismatches the code's expected
-  version (a future column add, etc.), qhaway **closes the connection, deletes the db
-  files (all three), and rebuilds a fresh schema from the topic files** — no migration
-  tooling, because the db is a derived view, not truth. A schema-drift `OperationalError`
-  is treated the same way (rebuild, don't crash). This is the derived-index thesis
-  paying off: migrations are free when the source of truth is the files.
+- **Schema drift self-heals from files (G-3) — but rebuild AT MOST ONCE, then crash
+  (U-1).** The schema carries a `PRAGMA user_version`. On connect, if the stored
+  version mismatches the code's expected version (a future column add, etc.), qhaway
+  **closes the connection, deletes the db files (all three), and rebuilds a fresh
+  schema from the topic files** — no migration tooling, because the db is a derived
+  view, not truth. A schema-drift `OperationalError` is treated the same way (rebuild,
+  don't crash). **Guard against an infinite rebuild loop (U-1):** rebuild is attempted
+  **once per session**; if the *same* operation fails again after a rebuild, that is a
+  code bug (bad query, typo), not drift — **fail loud, do not rebuild again.** A
+  per-connection `_rebuilt` flag enforces the single attempt. This is the derived-index
+  thesis paying off (migrations are free when the source is the files) *without* turning
+  a query bug into a disk-thrashing loop.
+- **Destructive rebuild is the ONE place needing a cross-process guard (TFUP-1).**
+  Normal reconcile relies on `BEGIN IMMEDIATE` + `busy_timeout` (C-4/C-5). But deleting
+  and recreating the db files while another process holds an open connection can *fork
+  reality* (the old process keeps using an unlinked file; the new one creates a fresh
+  db) — two live indexes, the hidden-two-modes divergence we kill everywhere. So the
+  **destructive path only** (delete-all-three + rebuild) acquires a narrow
+  `.qhaway.db.reset.lock` first; if it can't be acquired within a bounded timeout, fail
+  loud rather than fork. This is NOT a general cross-process mutex (we declined that in
+  C-4) — only the rare, destructive reset is guarded. A long-running `serve` that hits a
+  version mismatch or a failed DB op reopens through this same reset path rather than
+  holding an obsolete connection.
 
 ### FTS escalation ladder (rationale — do not skip a rung the wrong way)
 
@@ -130,7 +146,7 @@ backend, not thicken this one.
 3. **No new write path to the db.** `[[links]]` are inter-file references stored as
    text in the topic file; the db derives edges on rebuild. The `links` argument
    only writes wikilink text. Forward-declared links (target file not yet written)
-   are not errors — they are dangling links, surfaced by `--check`.
+   are not errors — they are dangling links, surfaced by `qhaway check`.
 4. **MEMORY.md is fenced read-only.** It is fully derived; nobody should hand-edit
    it. Fencing it channels the write reflex toward `remember`. Topic files stay
    writable (they are the write surface; a stray hand-written topic file is a
@@ -268,7 +284,7 @@ every `remember` without thought:
    re-parse and upsert the node *and* refresh its edges (delete-then-insert its
    `edges` rows); in-db-but-gone-from-disk → drop the node **and** `DELETE FROM
    edges WHERE src_file = ?` (F-6: never leave orphaned edges, which would corrupt
-   `--check`'s dangling-link detection). Most session-starts change nothing, so
+   `qhaway check`'s dangling-link detection). Most session-starts change nothing, so
    reconcile is a stat sweep + one small query — near-instant.
    - **Timestamps are integer nanoseconds** (`path.stat().st_mtime_ns`, stored
      `INTEGER`/`BIGINT`), not float seconds (F-3): the skip test is an *equality*
@@ -341,10 +357,10 @@ MCP, CLI).
 
 | Unit | Purpose | Depends on |
 |---|---|---|
-| `server.py` (new) | MCP server exposing `remember` + `recall`. Thin: validates/composes args; `remember` writes a file then `reconcile`; `recall` calls `project_slice_with_overflow` and returns the markdown. Success → string; failure → **structured MCP error** (C-10). **stdout is reserved strictly for JSON-RPC (G-5):** all init/resolution/error output goes to `stderr` and the process exits non-zero — a stray stdout write (traceback, dir-resolution failure) corrupts the protocol stream and crashes the client. | reconcile, project, parse |
+| `server.py` (new) | MCP server exposing `remember` + `recall`. Thin: validates/composes args; `remember` writes a file then `reconcile`; `recall` calls `project_slice_with_overflow` and returns the markdown. Success → string; failure → **structured MCP error** (C-10). **stdout discipline, split by phase (G-5 + TFUP-2):** *Before* serving starts (init, dir resolution) — all diagnostics → `stderr`, exit non-zero on fatal failure; stdout untouched. *After* serving starts — stdout carries **only** JSON-RPC frames, and a tool-call failure is returned as an **in-band structured MCP error on stdout** (C-10), never a stderr-only log and never a server crash; stderr is for logs/traces that must not replace the in-band error. | reconcile, project, parse |
 | `reconcile.py` (new) | The one shared sync op: incremental `(mtime_ns,size)` topic reconcile (bulk-load db state, in-memory compare, upsert+edge-refresh changed, cascade-delete gone) + (D)-checked, born-read-only, self-healing MEMORY.md redirect. Houses the born-read-only atomic-replace helper and the `remember` hyphen-slugify / safe-YAML composer. | model, parse, project |
 | `cli.py` (extend) | Add `qhaway reconcile` (startup-hook entry; `init` is the same op on an empty dir), `qhaway serve` (launch MCP server; **reconciles once at startup**, C-3; resolves the memory dir via the tiered chain, OQ-2), and **`qhaway check`** (read-only inspection: dangling links, would-overflow, orphan `MEMORY-<ts>.md` count — SFUP-1). `index` becomes a **deprecated alias for reconcile** (OQ-3); `index --check` becomes a thin deprecated alias for `check` (one release, then removed). One write path; MEMORY.md always the redirect. | reconcile, server |
-| `model.py` (rework) | **DuckDB → SQLite (WAL, required — G-2).** Add `mtime_ns` + `size` columns to `nodes`; `PRAGMA user_version` + rebuild-on-drift (G-3). `edges` gets `PRIMARY KEY (src_file, dst_slug, kind)` + `INDEX(dst_slug)` (G-4 — dedups edges, O(log N) lookup for the C-6 delete and `check` scan; **no FK cascade** — redundant with reconcile's explicit edge delete and guards an architecturally-impossible path). Incremental upsert/delete in a `BEGIN IMMEDIATE` transaction (C-5), `PRAGMA busy_timeout` (C-4), `fetch_nodes(conn)` introspection (C-2), persistent connection factory for `<memory_dir>/.qhaway.db`. All file I/O explicit `encoding="utf-8"` (G-8). | sqlite3 (stdlib), parse |
+| `model.py` (rework) | **DuckDB → SQLite (WAL, required — G-2).** Add `mtime_ns` + `size` columns to `nodes`; `PRAGMA user_version` + rebuild-on-drift (G-3). `edges` gets `PRIMARY KEY (src_file, dst_slug, kind)` + `INDEX(dst_slug)` (G-4 — dedups edges, O(log N) lookup for the C-6 delete and `check` scan; **no FK cascade** — redundant with reconcile's explicit edge delete and guards an architecturally-impossible path). Incremental upsert/delete in a `BEGIN IMMEDIATE` transaction (C-5), `PRAGMA busy_timeout = 5000` on every connection (C-4/U-2), `fetch_nodes(conn)` introspection (C-2), persistent connection factory for `<memory_dir>/.qhaway.db`. All SQL uses `?` parameter bindings, never string interpolation (U-4 — matches existing `model.py`). All file I/O explicit `encoding="utf-8"` (G-8). | sqlite3 (stdlib), parse |
 | `project.py` (port) | SQL ported to SQLite via `fetch_nodes` (no `DESCRIBE`, C-2). `project_slice(...) -> str` **unchanged** (stable MVP API, C-1); new sibling `project_slice_with_overflow(...) -> ProjectionResult` carries `(markdown, overflow)` (F-7) for the MCP path. | sqlite3 (stdlib) |
 | `parse.py` | **Unchanged.** Reused wholesale. | — |
 
@@ -390,7 +406,7 @@ replace guarantees all-or-nothing, so MEMORY.md is never left half-written.
    it already matches); the topic file and db index are what change.
 4. **`remember` links become edges:** a `remember(links=[...])` call writes
    `[[slug]]` text such that a subsequent `reconcile` produces the corresponding
-   edges; a link to a nonexistent slug is surfaced by `--check`, not swallowed.
+   edges; a link to a nonexistent slug is surfaced by `qhaway check`, not swallowed.
 5. **`recall()` returns the budgeted working set** — byte-identical to what
    `project_slice` produces for the same corpus; under budget; declared omissions
    present.
@@ -431,7 +447,7 @@ replace guarantees all-or-nothing, so MEMORY.md is never left half-written.
     `parse.py` reads back with those exact values intact (safe-YAML round-trip), not
     a tolerant-parser mangle.
 17. **Node deletion leaves no orphaned edges (F-6):** after a linked topic file is
-    deleted and reconciled, `edges` has zero rows with that `src_file`; `--check`
+    deleted and reconciled, `edges` has zero rows with that `src_file`; `qhaway check`
     reports no spurious dangling links from the removed node.
 18. **Persistent db survives across processes & rebuilds by deletion:** an index
     built in one process is read by a separate process via `recall` (persistence);
@@ -461,7 +477,7 @@ replace guarantees all-or-nothing, so MEMORY.md is never left half-written.
     as success results containing error prose.
 25. **`links` normalize to canonical stems (C-11):** `links=["Foo Bar",
     "foo-bar.md", "[[foo-bar]]"]` all emit `[[foo-bar]]`; the resulting edges
-    resolve under `--check` when the target exists.
+    resolve under `qhaway check` when the target exists.
 26. **Schema drift triggers rebuild-from-files (G-3):** a `.qhaway.db` written with a
     stale `user_version` (or missing an expected column) is detected on connect and
     transparently rebuilt from the topic files; no `OperationalError` escapes, and the
@@ -480,6 +496,15 @@ replace guarantees all-or-nothing, so MEMORY.md is never left half-written.
     with a clear stderr message and does **not** silently run on a rollback journal.
     *(Test as feasible — may be a unit test stubbing the PRAGMA failure rather than a
     real exotic filesystem.)*
+31. **Rebuild-on-drift is bounded to once (U-1):** an operation that raises
+    `OperationalError` from a *persistent code bug* (not schema drift) triggers **at
+    most one** rebuild, then fails loud — it does not loop deleting/recreating the db.
+    (Assert via a forced-failing query + a rebuild spy: exactly one rebuild, then the
+    error propagates.)
+32. **Destructive rebuild is serialized (TFUP-1):** the delete-all-three + rebuild path
+    acquires `.qhaway.db.reset.lock`; a second process attempting a concurrent reset
+    waits (bounded) or fails loud rather than forking a second live index. Normal
+    (non-destructive) reconcile does **not** take this lock.
 
 ## Second review (Codex) — resolutions
 
@@ -527,7 +552,7 @@ missed. All findings accepted; resolutions pinned here (tests above):
   the adoption thesis must not lean on a guarantee the fence does not provide.)*
 - **C-7 — empty-dir init.** `reconcile`/`init` succeeds on a zero-topic directory
   (fresh install before the first `remember`): create empty schema, write redirect,
-  write sidecar, return success. The "low topic count" signal is a `--check`
+  write sidecar, return success. The "low topic count" signal is a `qhaway check`
   *warning* only — it never blocks init/reconcile.
 - **C-8 — WAL sidecar files.** WAL mode creates `.qhaway.db-wal` and `.qhaway.db-shm`
   beside `.qhaway.db`. All three are named in the generated `.gitignore` guidance and
@@ -546,7 +571,7 @@ missed. All findings accepted; resolutions pinned here (tests above):
   through the **same hyphen-slug rules as `title`**: strip `[[...]]`, strip `.md`,
   reject path separators, slugify spaces → hyphens, emit only canonical stems. A
   forward-declared link (target not yet on disk) remains legal (surfaced by
-  `--check`), but it is a *canonical* stem, not raw model text.
+  `qhaway check`), but it is a *canonical* stem, not raw model text.
 
 ### Open questions — resolved
 
@@ -619,6 +644,41 @@ than Codex's logical contradictions). All eight accepted; two refined:
   write path.)
 - **G-8 — explicit utf-8.** All new file I/O sets `encoding="utf-8"` (matches the
   existing code's discipline; LLM text carries emoji/smart-quotes/non-ASCII).
+
+### Fifth round (Codex TFUP + Gemini U) — resolved
+
+Both reviewers endorsed the prior round's decisions (Gemini: G-2 "highly sound,"
+G-4 "reasonable"; Codex: SFUP-1 landed). The new findings are **consequences of the
+G-3 schema-rebuild rule I added last round** — the convergent tail, not new design
+holes. Two adversaries independently caught the same rebuild-loop hazard (U-1 ≈
+the safety half of TFUP-1), which is the strongest signal it is real.
+
+- **U-1 — infinite rebuild loop.** G-3's "rebuild on `OperationalError`" loops forever
+  if the error is a *code bug* (the rebuilt db hits the same bug). Fixed: **rebuild at
+  most once per session, then crash loud** (`_rebuilt` flag). (Folded into backend
+  G-3 bullet.)
+- **TFUP-1 — cross-process safety of the destructive rebuild.** Deleting/recreating db
+  files while another process holds a connection forks reality. Fixed: the
+  **destructive path only** takes a narrow `.qhaway.db.reset.lock` (bounded-wait, fail
+  loud) — not a general mutex (declined in C-4). `serve` reopens through the reset path
+  on mismatch. (Folded into backend G-3 bullet.)
+- **TFUP-2 — stdout discipline, startup vs. tool-call.** G-5's "all errors → stderr,
+  exit non-zero" is right *before* serving but wrong *after*: an accepted tool call's
+  failure must be an **in-band structured MCP error on stdout** (C-10), not a crash.
+  Split the rule by phase. (Folded into server.py row.)
+- **U-2 — pin `busy_timeout = 5000`.** The C-4 timeout gets a concrete default (5 s) on
+  every connection so concurrent writers serialize instead of immediately raising
+  `SQLITE_BUSY`. (model.py row.)
+- **U-4 — parameterized SQL.** All queries use `?` bindings, never string interpolation
+  of parsed (untrusted) fields. Already how `model.py` is written; stated as a standard.
+  (model.py row.)
+- **U-3 — Windows `os.replace` over a 0444 file — DEFERRED to step 3, not folded.**
+  On Windows, `os.replace` over a read-only target raises `PermissionError` (POSIX lets
+  it through via directory write). Correct, but **out of scope for step 1** (Linux/WSL,
+  single machine); Gemini itself tags it "future Step 3 redistribution." The step-3
+  atomic-write helper will, on non-POSIX, clear the read-only attribute before replace.
+  Folding Windows portability into a step-1 spec would be the scope creep this project
+  guards against. **Named here so it is not lost; deliberately not built now.**
 
 ## Out of scope (YAGNI / anti-sprawl — named, not silently dropped)
 
