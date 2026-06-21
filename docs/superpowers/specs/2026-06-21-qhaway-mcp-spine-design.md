@@ -507,11 +507,14 @@ replace guarantees all-or-nothing, so MEMORY.md is never left half-written.
     with a clear stderr message and does **not** silently run on a rollback journal.
     *(Test as feasible — may be a unit test stubbing the PRAGMA failure rather than a
     real exotic filesystem.)*
-31. **Rebuild-on-drift is bounded to once (U-1):** an operation that raises
-    `OperationalError` from a *persistent code bug* (not schema drift) triggers **at
-    most one** rebuild, then fails loud — it does not loop deleting/recreating the db.
-    (Assert via a forced-failing query + a rebuild spy: exactly one rebuild, then the
-    error propagates.)
+31. **True-drift rebuild is bounded to once (U-1 + FFUP-2):** a **true drift** signal
+    (stale `user_version`) triggers a rebuild; if the rebuilt db *still* drifts (the
+    same drift check fails again), qhaway fails loud after **exactly one** rebuild
+    attempt — it does not loop deleting/recreating the db (`_rebuilt` flag). (Assert via
+    a forced-persistent-drift + a rebuild spy: exactly one rebuild, then the error
+    propagates.) The non-drift→**zero**-rebuild case is test 26's job — these two
+    together pin the full classifier: drift rebuilds (once), everything else fails loud
+    untouched.
 32. **Destructive rebuild is serialized (TFUP-1):** the delete-all-three + rebuild path
     acquires `.qhaway.db.reset.lock`; a second process attempting a concurrent reset
     waits (bounded) or fails loud rather than forking a second live index. Normal
@@ -719,6 +722,24 @@ specifically to catch fold-induced holes earned its keep here.
   consistent with step 1's Linux/WSL scope. (Backend section.)
 - **Cleanup.** The historical G-5 bullet is annotated as refined-by-TFUP-2 (the
   phase-split is the operative rule).
+
+### Seventh round (Codex FIFUP + Gemini U3) — resolved (convergence)
+
+Both reviewers returned **done** verdicts (Gemini: "fully complete and
+production-ready"; Codex: FFUP-2 resolved, FFUP-1 "a clear product decision, not a
+hidden hole"). They independently flagged the **same single item** — a stale test, not
+a design fault:
+
+- **FIFUP-1 = U3-1 — test 31 contradicted the narrowed rebuild trigger.** When FFUP-2
+  made rebuild fire *only* on true drift, test 31 still asserted "a non-drift code bug
+  triggers one rebuild" (the retired behavior). Fixed: **test 31 now exercises the
+  once-guard via a true-drift signal that stays broken** (one rebuild → still drifts →
+  fail loud, no loop); **test 26 covers non-drift → zero rebuilds.** Together they pin
+  the full classifier. No design change — one test criterion described the design wrong.
+
+With both adversaries at "ready" and the only finding a corrected test criterion, the
+spec is treated as **converged**. The next unknown is empirical (the read-only fence
+spike), not reviewable — so implementation is the next step, not a further review.
 
 ## Out of scope (YAGNI / anti-sprawl — named, not silently dropped)
 
