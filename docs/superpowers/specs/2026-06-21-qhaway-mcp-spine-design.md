@@ -36,7 +36,8 @@ entry point wired). **The new work is: a thin MCP layer (two verbs), one shared
 two new `nodes` columns (`mtime_ns`, `size`) to make reconcile cheap, and a
 backend swap from DuckDB to stdlib SQLite (WAL) — not a new source of truth.**
 `parse.py` and `project.py` are reused (port `project.py`'s SQL to SQLite —
-plain `SELECT`/`DESCRIBE`, no DuckDB-specific syntax); `model.py` is reworked for
+plain `SELECT` + a `fetch_nodes` introspection helper, not DuckDB's `DESCRIBE` —
+see C-2); `model.py` is reworked for
 SQLite + incremental upsert; `cli.py` is extended.
 
 ### Backend: DuckDB → SQLite (WAL), persistent and co-located
@@ -181,10 +182,13 @@ on demand."
 
 ### `recall` overflow — structured now, dynamic-banding later
 
-**API contract (F-7) — separate the Python API from the MCP tool.** The internal
-`project_slice` returns a structured pair `(markdown: str, overflow: OverflowMeta)`,
-where `overflow` carries per-dynamic-facet counts (`origin_session`, `date_hint`)
-of the omitted set. The **MCP `recall` tool returns only the markdown string**
+**API contract (F-7 + C-1) — separate the Python API from the MCP tool.** The
+existing `project_slice(...) -> str` is **unchanged** (stable MVP API; the
+regression suite keeps treating it as a string). A **sibling**
+`project_slice_with_overflow(...) -> ProjectionResult` returns a structured pair
+`(markdown: str, overflow: OverflowMeta)`, where `overflow` carries
+per-dynamic-facet counts (`origin_session`, `date_hint`) of the omitted set; it is
+what the MCP path calls. The **MCP `recall` tool returns only the markdown string**
 (the rendered slice, including the flat "+N not shown" footer); it discards
 `overflow` in v1. This computes and carries the band data at the Python layer so
 the **designed-in first enhancement** (dynamic temporal banding) changes only how
@@ -269,10 +273,17 @@ MEMORY.md, which we own, gets preserve-before-overwrite.
 
 ## The read-only fence (and the spike that must precede it)
 
-The fence makes hand-editing MEMORY.md harder than calling `remember`: to defeat a
-0444 file the instance must run `chmod` in bash — more work, more conspicuous, more
-obviously vandalism against a managed artifact — while `remember` sits right there
-offering one call. The fence handles the stubborn *write* reflex; the redirect
+The fence makes the *reflexive* hand-edit of MEMORY.md fail: a direct
+`open(MEMORY.md, 'w')` / `Edit` on a 0444 file raises PermissionError, so the
+cheap reach for the file is blocked and `remember` sits right there offering one
+call instead. **Honest scope (C-6): 0444 is a friction signal, not a barrier.**
+qhaway's own writer uses temp-file + `rename` (write on the *directory*, not the
+file), so any atomic-replacement tool can bypass the fence *without* `chmod` — the
+guarantee is "direct writes fail; atomic replacement may still bypass," not "must
+run chmod." That is sufficient for the adoption thesis (it removes the *reflexive*
+easy path), and real enforcement — if step 2's measurement shows it is needed —
+belongs in the observe/intercept layer, not in chmod. The fence handles the
+stubborn *write* reflex; the redirect
 handles the *read* (to know what it knows, the instance must call `recall`), and
 the read is what builds the habit through use.
 
@@ -286,15 +297,18 @@ the read is what builds the habit through use.
   and needs write on the *directory*, not the target, so it lands cleanly. No
   writable window ever exists for a reader or torn write to catch.
 
-**SPIKE (must run before building on this):** a ~10-line script confirming, on this
+**SPIKE (must run before building on this):** a short script confirming, on this
 Linux box, that (a) writing through an fd to a 0444-mode file succeeds, and (b)
-`os.replace` of a 0444 temp over an existing 0444 `MEMORY.md` succeeds. This is a
-filesystem-edge assumption, not a fact — verify it, do not trust it. If (a) or (b)
-fails, fall back to write-temp-0644 → replace → `chmod 0444` (a tiny writable
-window, acceptable because MEMORY.md is regenerable). The (D) edit-preservation
-logic in `cli.py` is reused unchanged; only the final write becomes the
-read-only swap. The same write helper lives in `reconcile`, so fence + (D) behave
-identically for every caller (startup hook, MCP, CLI).
+`os.replace` of a 0444 temp over an existing 0444 `MEMORY.md` succeeds — **and**
+(c, per C-6) characterizing the bypass: that a temp-file + `rename` from an
+unprivileged process *does* replace the 0444 file (confirming the fence is a
+friction signal, not a barrier) while a direct `open(...,'w')` *fails*. (a)/(b) are
+filesystem-edge assumptions — verify, do not trust. If (a) or (b) fails, fall back
+to write-temp-0644 → replace → `chmod 0444` (a tiny writable window, acceptable
+because MEMORY.md is regenerable). The (D) edit-preservation logic is reused
+unchanged; only the final write becomes the read-only swap. The write helper lives
+in `reconcile`, so fence + (D) behave identically for every caller (startup hook,
+MCP, CLI).
 
 ## Architecture
 
@@ -302,9 +316,9 @@ identically for every caller (startup hook, MCP, CLI).
 |---|---|---|
 | `server.py` (new) | MCP server exposing `remember` + `recall`. Thin: composes/validates args, calls `reconcile`/`project_slice`, returns strings. | reconcile, project, parse |
 | `reconcile.py` (new) | The one shared sync op: incremental `(mtime_ns,size)` topic reconcile (bulk-load db state, in-memory compare, upsert+edge-refresh changed, cascade-delete gone) + (D)-checked, born-read-only, self-healing MEMORY.md redirect. Houses the born-read-only atomic-replace helper and the `remember` hyphen-slugify / safe-YAML composer. | model, parse, project |
-| `cli.py` (extend) | Add `qhaway reconcile` (the startup-hook entry; also = `init`) and `qhaway serve` (launch the MCP server). The existing `index` keeps working; its write path is migrated onto `reconcile`'s shared helper so there is one write path. | reconcile, server |
-| `model.py` (rework) | **DuckDB → SQLite (WAL).** Add `mtime_ns` + `size` columns to `nodes`. Provide incremental upsert/delete (not just rebuild-from-scratch) and a persistent connection factory for `<memory_dir>/.qhaway.db`. Port the existing rebuild path to SQLite. | sqlite3 (stdlib), parse |
-| `project.py` (port) | SQL ported to SQLite (`SELECT`/schema introspection); `project_slice` returns `(markdown, overflow)` (F-7). Logic otherwise unchanged. | sqlite3 (stdlib) |
+| `cli.py` (extend) | Add `qhaway reconcile` (startup-hook entry; `init` is the same op on an empty dir) and `qhaway serve` (launch MCP server; **reconciles once at startup**, C-3; resolves the memory dir via the tiered chain, OQ-2). `index` becomes a **deprecated alias for reconcile** (OQ-3) — one write path, MEMORY.md always the redirect. | reconcile, server |
+| `model.py` (rework) | **DuckDB → SQLite (WAL).** Add `mtime_ns` + `size` columns to `nodes`. Provide incremental upsert/delete in a `BEGIN IMMEDIATE` transaction (C-5), `PRAGMA busy_timeout` (C-4), a `fetch_nodes(conn)` introspection helper (C-2), and a persistent connection factory for `<memory_dir>/.qhaway.db`. | sqlite3 (stdlib), parse |
+| `project.py` (port) | SQL ported to SQLite via `fetch_nodes` (no `DESCRIBE`, C-2). `project_slice(...) -> str` **unchanged** (stable MVP API, C-1); new sibling `project_slice_with_overflow(...) -> ProjectionResult` carries `(markdown, overflow)` (F-7) for the MCP path. | sqlite3 (stdlib) |
 | `parse.py` | **Unchanged.** Reused wholesale. | — |
 
 ## Data flow
@@ -320,7 +334,7 @@ remember(type,title,body,...) →
   reconcile(dir) → return confirmation
 
 recall(facets?) →
-  project_slice(facets) -> (markdown, overflow) → return markdown   [pure read; no write]
+  project_slice_with_overflow(facets) -> (markdown, overflow) → return markdown  [pure read]
 ```
 
 ## Error handling
@@ -354,9 +368,9 @@ read-only swap fails, report it — do not leave MEMORY.md in a half-written sta
 7. **`recall` writes nothing and does not reconcile:** no file in the memory dir is
    created or modified by a `recall` call; it is a pure read of the current index.
 8. **`recall` overflow carries structured band info:** when a slice overflows,
-   `project_slice` returns `(markdown, overflow)` where `overflow` includes
-   per-`origin_session`/`date_hint` counts of the omitted set; the MCP `recall`
-   returns the markdown string and the footer is present (F-7).
+   `project_slice_with_overflow` returns `(markdown, overflow)` where `overflow`
+   includes per-`origin_session`/`date_hint` counts of the omitted set; the MCP
+   `recall` returns the markdown string and the footer is present (F-7/C-1).
 9. **Born-read-only swap (gated on the spike):** after `qhaway reconcile`/`init`,
    MEMORY.md is mode 0444 and contains the redirect; a hand `open('w')` on it raises
    PermissionError; reconcile run again still succeeds (the tool is the one writer
@@ -392,6 +406,116 @@ read-only swap fails, report it — do not leave MEMORY.md in a half-written sta
     built in one process is read by a separate process via `recall` (persistence);
     `rm .qhaway.db` followed by `reconcile` reproduces an equivalent index from the
     files (files remain truth). `.qhaway.db` is excluded from `topic_files`.
+19. **`serve` reconciles once at startup (C-3):** starting `qhaway serve` with no
+    pre-existing `.qhaway.db` and then calling `recall` returns the current corpus —
+    the server runs exactly one `reconcile` before accepting tool calls; `recall`
+    stays pure thereafter.
+20. **Concurrent same-title `remember` never loses a body (C-4):** two same-title
+    `remember` calls produce two distinct files via `O_CREAT|O_EXCL` exclusive
+    create; neither body is lost or overwritten.
+21. **Reconcile is atomic under failure (C-5):** an injected failure between edge
+    delete and edge insert leaves the *prior committed* index fully readable (the
+    DB portion runs in one `BEGIN IMMEDIATE` transaction; partial state never
+    commits).
+22. **Valid redirect + missing sidecar is NOT preserved as an orphan (C-9):** when
+    MEMORY.md bytes equal the current redirect template but `.qhaway.json` is
+    missing/corrupt, reconcile repairs the sidecar and creates **zero**
+    `MEMORY-<ts>.md` files.
+23. **Empty-dir init succeeds (C-7):** `qhaway reconcile`/`init` on a directory with
+    zero topic files creates the schema, writes the redirect, writes the sidecar,
+    and returns success; a subsequent `remember` then `recall` round-trips.
+24. **MCP failures are structured, not success-strings (C-10):** invalid `type`,
+    unreadable dir, DB failure, and write failure surface as MCP tool *errors*, not
+    as success results containing error prose.
+25. **`links` normalize to canonical stems (C-11):** `links=["Foo Bar",
+    "foo-bar.md", "[[foo-bar]]"]` all emit `[[foo-bar]]`; the resulting edges
+    resolve under `--check` when the target exists.
+
+## Second review (Codex) — resolutions
+
+A second adversarial pass (`...-codex-feedback.md`) found contradictions the first
+missed. All findings accepted; resolutions pinned here (tests above):
+
+- **C-1 — `project_slice` signature vs. regression guard (was self-contradictory).**
+  `project_slice(...) -> str` stays the **stable MVP public API** (the existing
+  suite and CLI keep treating it as a string, regression guard intact). A **sibling**
+  `project_slice_with_overflow(...) -> ProjectionResult` carries `(markdown,
+  overflow)` for the MCP path. F-7's overflow metadata lives in the sibling; the
+  string API is untouched. (Supersedes the earlier "amend the tests" wording.)
+- **C-2 — `DESCRIBE` is DuckDB-only.** `project.py` currently calls `DESCRIBE
+  nodes`; SQLite has no `DESCRIBE`. Introspection moves behind one model-layer
+  helper `fetch_nodes(conn) -> list[dict]` (using `PRAGMA table_info(nodes)` /
+  `cursor.description`), so projection is decoupled from backend schema inspection —
+  serving the swappable-backend goal directly.
+- **C-3 — `serve` startup freshness.** `qhaway serve` runs **exactly one**
+  `reconcile(memory_dir)` before registering/accepting tool calls. `recall` remains
+  pure after startup.
+- **C-4 — concurrent write safety.** Topic creation uses `O_CREAT|O_EXCL` inside the
+  suffix loop (atomic exclusive create — no two callers can claim the same name).
+  Overlapping reconciles serialize via SQLite's single-writer + `PRAGMA
+  busy_timeout` + the C-5 transaction (second writer waits, then proceeds; or fails
+  loud on timeout). **No separate cross-process lock** — this is a low-contention
+  path (the hook runs once at boot; concurrent `remember`s are rare under the
+  single-threaded MCP call model), and the redirect write is idempotent/self-healing
+  (C-9), so there is nothing a mutex would protect that the transaction + repair rule
+  does not.
+- **C-5 — reconcile transaction boundary.** The DB portion of reconcile (node
+  upserts, edge delete/insert, node deletes) runs inside one `BEGIN IMMEDIATE`
+  transaction, committed only after all changes succeed. The MEMORY.md redirect
+  write happens **after** the DB commit (it is derived and healable on the next run).
+- **C-6 — fence guarantee, honestly downgraded.** 0444 makes a direct
+  `open(...,'w')` fail, but qhaway's *own* write mechanism — temp-file + `rename` —
+  needs write on the *directory*, not the file, so any atomic-replacement tool
+  (many editors, `Write`-style helpers) bypasses the fence **without** `chmod`. The
+  fence is therefore a **friction signal, not a barrier**: "direct writes fail;
+  atomic replacement may still bypass." Real enforcement, if ever needed, is step 2's
+  observe/intercept layer, not chmod. The spike must test **both** the direct-open
+  and the temp-file-rename paths. *(This corrects an overclaim in the fence section:
+  the adoption thesis must not lean on a guarantee the fence does not provide.)*
+- **C-7 — empty-dir init.** `reconcile`/`init` succeeds on a zero-topic directory
+  (fresh install before the first `remember`): create empty schema, write redirect,
+  write sidecar, return success. The "low topic count" signal is a `--check`
+  *warning* only — it never blocks init/reconcile.
+- **C-8 — WAL sidecar files.** WAL mode creates `.qhaway.db-wal` and `.qhaway.db-shm`
+  beside `.qhaway.db`. All three are named in the generated `.gitignore` guidance and
+  in any future reset/cleanup command. (They are not `*.md`, so `topic_files` already
+  ignores them; this is about git/packaging/reset, not the scan.)
+- **C-9 — matching-redirect-but-missing-sidecar.** Idempotence rule: **if MEMORY.md
+  bytes equal the current redirect template, reconcile repairs `.qhaway.json`
+  without preserving MEMORY.md.** Preserve as `MEMORY-<ts>.md` *only* when MEMORY.md
+  differs from **both** the recorded last-output hash **and** the current template.
+  (Closes a real bug: a valid redirect + lost sidecar would otherwise be orphaned.)
+- **C-10 — MCP error surface.** Tool errors surface as **structured MCP failures**
+  (raised/error results), never as success strings containing error prose (a model
+  could mistake those for confirmations). String returns are reserved for success
+  (confirmation / rendered markdown). The CLI still uses stderr + non-zero exit.
+- **C-11 — `links` normalization contract.** `remember` normalizes each link
+  through the **same hyphen-slug rules as `title`**: strip `[[...]]`, strip `.md`,
+  reject path separators, slugify spaces → hyphens, emit only canonical stems. A
+  forward-declared link (target not yet on disk) remains legal (surfaced by
+  `--check`), but it is a *canonical* stem, not raw model text.
+
+### Open questions — resolved
+
+- **OQ-1 — supersession.** This spec **supersedes the "database is the source of
+  truth" framing** of `architecture-note-2026-06-20`. For qhaway: **files are the
+  source of truth; the SQLite index is a derived, rebuildable view.** The note's
+  db-truth language is aspirational for the *family* (the yanantin/ArangoDB tier);
+  it does not govern this slice. Implementers should not reopen this — going db-first
+  in qhaway reinvents the Arango tier badly (see "What qhaway is").
+- **OQ-2 — memory-dir discovery (tiered chain).** The dir resolves by precedence:
+  **(1)** `--dir <path>` flag → **(2)** `QHAWAY_MEMORY_DIR` env var → **(3)** config
+  file default → **(4) fail loud.** Asymmetry by command: the human-facing CLI
+  (`index`/`reconcile`) may keep `.`/cwd as the bottom rung (you are standing in the
+  dir); **`serve` requires explicit resolution and fails loud if the chain is empty**
+  — a server defaulting to cwd could index the wrong project's memory, the worst
+  silent error for a memory tool. Never guess silently.
+- **OQ-3 — `qhaway index` compatibility.** `index` becomes a **deprecated alias for
+  reconcile** (redirect-writing). There is **one write path to MEMORY.md** and
+  MEMORY.md is **always the redirect** — no second full-projection-into-MEMORY.md
+  mode (two write paths is the divergence disease). The full-projection *logic* does
+  not die: it is exactly what `recall` returns on demand. Only the
+  MEMORY.md-as-full-index *output* is retired.
 
 ## Out of scope (YAGNI / anti-sprawl — named, not silently dropped)
 
@@ -412,9 +536,11 @@ read-only swap fails, report it — do not leave MEMORY.md in a half-written sta
 ## Regression guard (the MVP must stay green)
 
 The backend swap and incremental rework touch tested MVP code. **The existing
-`tests/test_qhaway.py` suite must pass unchanged after the SQLite port** (it pins
+`tests/test_qhaway.py` suite must pass unchanged after the SQLite port** — made
+achievable by C-1 (the public `project_slice(...) -> str` signature is preserved;
+overflow lives in a sibling, so no test rewrites for the signature). The suite pins
 the truncation cure: budget, declared omissions, idempotence, (D) preservation,
-tombstone exclusion). Any test that asserts a DuckDB-specific behavior (rather than
+tombstone exclusion. Any test that asserts a DuckDB-specific behavior (rather than
 a cure invariant) is updated to the SQLite equivalent; no cure invariant is
 weakened to make the port pass. If a port change forces a cure test to change, that
 is a signal to stop and review, not to edit the test.
