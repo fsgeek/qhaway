@@ -66,7 +66,8 @@ decisions:
   future-version expansion, not an MVP silent-degrade.
 - **Persistent, co-located:** the index lives at `<memory_dir>/.qhaway.db`
   (gitignored; excluded from `topic_files` alongside `MEMORY.md`/`MEMORY-*`/
-  `.qhaway.json`). The index belongs *with* what it indexes: each project's memory
+  `.qhaway.json`/`.qhaway.db-wal`/`.qhaway.db-shm`/`.qhaway.db.reset.lock` — U2-1).
+  The index belongs *with* what it indexes: each project's memory
   dir is a self-contained unit (files + index + redirect + sidecar), so the
   multi-project reality (governance, yanantin, hamutay each have separate memory)
   Just Works — separate dirs, separate co-located indexes, no global
@@ -75,29 +76,37 @@ decisions:
   next reconcile rebuilds from the files (files remain the source of truth). Deleting
   only `.qhaway.db` can leave a stale `-wal` that SQLite recovers from on next open →
   corruption/lock. Any reset helper qhaway ships must remove all three.
-- **Schema drift self-heals from files (G-3) — but rebuild AT MOST ONCE, then crash
-  (U-1).** The schema carries a `PRAGMA user_version`. On connect, if the stored
-  version mismatches the code's expected version (a future column add, etc.), qhaway
-  **closes the connection, deletes the db files (all three), and rebuilds a fresh
-  schema from the topic files** — no migration tooling, because the db is a derived
-  view, not truth. A schema-drift `OperationalError` is treated the same way (rebuild,
-  don't crash). **Guard against an infinite rebuild loop (U-1):** rebuild is attempted
-  **once per session**; if the *same* operation fails again after a rebuild, that is a
-  code bug (bad query, typo), not drift — **fail loud, do not rebuild again.** A
-  per-connection `_rebuilt` flag enforces the single attempt. This is the derived-index
-  thesis paying off (migrations are free when the source is the files) *without* turning
-  a query bug into a disk-thrashing loop.
-- **Destructive rebuild is the ONE place needing a cross-process guard (TFUP-1).**
-  Normal reconcile relies on `BEGIN IMMEDIATE` + `busy_timeout` (C-4/C-5). But deleting
-  and recreating the db files while another process holds an open connection can *fork
-  reality* (the old process keeps using an unlinked file; the new one creates a fresh
-  db) — two live indexes, the hidden-two-modes divergence we kill everywhere. So the
-  **destructive path only** (delete-all-three + rebuild) acquires a narrow
-  `.qhaway.db.reset.lock` first; if it can't be acquired within a bounded timeout, fail
-  loud rather than fork. This is NOT a general cross-process mutex (we declined that in
-  C-4) — only the rare, destructive reset is guarded. A long-running `serve` that hits a
-  version mismatch or a failed DB op reopens through this same reset path rather than
-  holding an obsolete connection.
+- **Schema drift self-heals from files — rebuild ONLY on true drift, AT MOST ONCE
+  (G-3 + U-1 + FFUP-2).** The schema carries a `PRAGMA user_version`. The destructive
+  rebuild (close, delete all three db files, rebuild from topic files — no migration
+  tooling, because the db is a derived view) fires **only on explicit drift signals:**
+  a `user_version` mismatch, or a known schema error (missing expected table/column).
+  **All other `OperationalError`s — `database is locked`, permission, disk I/O, malformed
+  SQL, query bugs — fail loud WITHOUT deleting anything** (FFUP-2): they are not drift,
+  and rebuilding on them would mask the real fault and churn files destructively. Even
+  on a true-drift rebuild, the attempt is **once per session** (`_rebuilt` flag); a
+  second failure of the *same* op after a rebuild is a code bug → fail loud, no second
+  rebuild (U-1). Net: rebuild is rare and narrowly triggered, never a disk-thrashing
+  loop, never a mask for an ordinary error.
+- **Destructive rebuild takes a resetter lock (TFUP-1).** Because the destructive path
+  deletes/recreates files, two concurrent *resetters* would race; it acquires
+  `.qhaway.db.reset.lock` via `fcntl.flock(LOCK_EX|LOCK_NB)` in a bounded retry loop
+  (≈5 s, fail loud on timeout; do not delete the lock file after release — that races
+  other openers) — U2-2. This is NOT a general mutex (declined in C-4); only the rare,
+  now-drift-only reset is guarded. A long-running `serve` that detects drift reopens
+  through this path rather than holding an obsolete connection.
+- **Residual race — named, deferred, not an MVP problem (FFUP-1).** The resetter lock
+  serializes two resetters but does not, by itself, stop an ordinary process with an
+  *open* connection from reading an unlinked old db while a resetter rebuilds. Closing
+  that fully needs a **DB-lifecycle lock** (ordinary ops take a shared lock, rebuild
+  takes exclusive). We **deliberately do not build that for the MVP:** with transient
+  short-lived connections (F-1/C-4), per-project single-user memory dirs, and rebuild
+  now firing *only* on a schema-version upgrade (FFUP-2 — approximately never during
+  normal use), the conditions to hit this race effectively cannot co-occur. Paying a
+  shared-lock cost on every `recall`/`reconcile` to guard an upgrade-during-concurrent-
+  access window is premature-collapse in concurrency-control form. The lifecycle lock is
+  the **named future fix** if real multi-process contention ever appears; until then the
+  residual race is a documented limitation, not a silent one.
 
 ### FTS escalation ladder (rationale — do not skip a rung the wrong way)
 
@@ -478,10 +487,12 @@ replace guarantees all-or-nothing, so MEMORY.md is never left half-written.
 25. **`links` normalize to canonical stems (C-11):** `links=["Foo Bar",
     "foo-bar.md", "[[foo-bar]]"]` all emit `[[foo-bar]]`; the resulting edges
     resolve under `qhaway check` when the target exists.
-26. **Schema drift triggers rebuild-from-files (G-3):** a `.qhaway.db` written with a
-    stale `user_version` (or missing an expected column) is detected on connect and
-    transparently rebuilt from the topic files; no `OperationalError` escapes, and the
-    resulting index matches a fresh build.
+26. **Rebuild fires ONLY on true drift, not on any error (G-3 + FFUP-2):** a
+    `.qhaway.db` with a stale `user_version` (or missing expected column) is detected
+    and transparently rebuilt from topic files, matching a fresh build. Conversely, a
+    non-drift `OperationalError` (e.g. `database is locked`, a malformed query) **fails
+    loud and does NOT delete the db** — assert the db files survive and the error
+    propagates.
 27. **`edges` rejects duplicate references (G-4):** indexing a file that declares the
     same `[[slug]]` twice yields a single `edges` row (the compound PK dedups), and a
     node-drop + reconcile leaves zero edges for that `src_file` via the explicit C-6
@@ -622,20 +633,21 @@ than Codex's logical contradictions). All eight accepted; two refined:
   (hidden two-modes divergence). If WAL can't init, refuse with a clear "move the
   memory dir to local storage" message. Wider filesystem support is a deliberate
   future expansion. (Folded into backend section.)
-- **G-3 — schema-drift self-heal.** `PRAGMA user_version`; on mismatch or a
-  schema-drift `OperationalError`, delete the db files and rebuild from the topic
-  files. Free because the db is a derived view — no migration tooling. (Backend
-  section.)
+- **G-3 — schema-drift self-heal.** `PRAGMA user_version`; on a drift signal, delete
+  the db files and rebuild from the topic files. Free because the db is a derived view —
+  no migration tooling. *(Refined by FFUP-2 below: rebuild fires only on **true drift**
+  — `user_version` mismatch / missing table-column — NOT on any `OperationalError`;
+  non-drift errors fail loud without deleting. See the backend G-3 bullet.)*
 - **G-4 — `edges` PK + index, no FK (refined).** `PRIMARY KEY (src_file, dst_slug,
   kind)` (dedups) + `INDEX(dst_slug)` (fast `check`/cleanup). **Declined** the
   suggested `FOREIGN KEY ... ON DELETE CASCADE`: reconcile already deletes edges
   explicitly on node-drop (C-6), so the FK is redundant, costs a `PRAGMA
   foreign_keys=ON` on every connection, and imposes an insert-ordering constraint —
   it would guard a path the single-shared-reconcile design forbids. (model.py row.)
-- **G-5 — MCP stdout discipline.** `serve` reserves stdout strictly for JSON-RPC;
-  all errors/traces/resolution-failures → stderr, exit non-zero. A stray stdout write
-  corrupts the protocol stream and crashes the client. Sharpens C-10 with the
-  stream-partition rule. (server.py row.)
+- **G-5 — MCP stdout discipline.** `serve` reserves stdout strictly for JSON-RPC.
+  *(Refined by TFUP-2 below — this bullet's "all errors → stderr, exit non-zero" holds
+  only **before** serving starts; after, tool-call failures are in-band MCP errors on
+  stdout. See the server.py row and TFUP-2 for the phase-split rule.)*
 - **G-6 — link-append boundary.** `body.rstrip()` + `"\n\n"` + one `[[slug]]` per
   line + trailing newline; never joined onto the body's last sentence. (`remember`
   write path.)
@@ -679,6 +691,34 @@ the safety half of TFUP-1), which is the strongest signal it is real.
   atomic-write helper will, on non-POSIX, clear the read-only attribute before replace.
   Folding Windows portability into a step-1 spec would be the scope creep this project
   guards against. **Named here so it is not lost; deliberately not built now.**
+
+### Sixth round (Codex FFUP + Gemini U2) — resolved
+
+Gemini's pass verdict: "complete, robust, fully prepared." Codex caught one real
+correctness gap in the TFUP-1 fix I had folded — the round you authorized
+specifically to catch fold-induced holes earned its keep here.
+
+- **FFUP-2 — narrow the rebuild trigger (the keystone).** Rebuild fires **only on true
+  drift** (`user_version` mismatch / missing table-column); every other
+  `OperationalError` (locked, permission, I/O, SQL bug) **fails loud without deleting**.
+  This is both correctness (stop masking real faults) and the thing that shrinks the
+  destructive path to "an upgrade happened." (Folded into the backend G-3 bullet.)
+- **FFUP-1 — the reset lock was a resetter mutex, not a lifecycle lock.** Codex is
+  right: serializing two resetters does not stop an ordinary open connection from
+  reading an unlinked db during a rebuild. The full fix is a DB-lifecycle lock
+  (ordinary ops shared, rebuild exclusive). **Deliberately deferred for the MVP**
+  (Tony's call: "is this a real problem for an MVP?" — it isn't): transient short-lived
+  connections + per-project single-user dirs + FFUP-2 making rebuild fire only on a
+  version upgrade mean the race effectively cannot co-occur; a shared lock on every
+  read would be premature-collapse. Named as the future fix, documented as a residual
+  limitation — not closed, not silent. (Folded into the backend residual-race bullet.)
+- **U2-1 — lock file excluded/gitignored.** `.qhaway.db.reset.lock` joins the db/WAL
+  files in `topic_files` exclusion, `.gitignore`, and reset cleanup. (Backend section.)
+- **U2-2 — lock mechanism pinned.** `fcntl.flock(LOCK_EX|LOCK_NB)` in a bounded retry
+  loop (~5 s, fail loud on timeout; don't delete the lock file after release). POSIX —
+  consistent with step 1's Linux/WSL scope. (Backend section.)
+- **Cleanup.** The historical G-5 bullet is annotated as refined-by-TFUP-2 (the
+  phase-split is the operative rule).
 
 ## Out of scope (YAGNI / anti-sprawl — named, not silently dropped)
 
