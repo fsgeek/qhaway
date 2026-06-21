@@ -123,7 +123,7 @@ def _role(stem: str) -> str | None:
 
 
 def _status(name: str | None) -> str:
-    if name and name.strip().upper() in TOMBSTONE_NAMES:
+    if name and name.strip().upper().startswith(tuple(TOMBSTONE_NAMES)):
         return "superseded"
     return "live"
 
