@@ -506,7 +506,7 @@ def test_unit_remember_links_normalization(temp_memory_dir):
 
 def test_unit_reconcile_sqlite_fallback(temp_memory_dir):
     """
-    G-2: Connection establishment fallback to TRUNCATE if WAL journal_mode is not supported.
+    G-2: Connection establishment fails loud (raises error) if WAL journal_mode is not supported.
     """
     check_modules_loaded()
     
@@ -526,12 +526,10 @@ def test_unit_reconcile_sqlite_fallback(temp_memory_dir):
         return conn
         
     with patch("sqlite3.connect", side_effect=mock_connect):
-        conn = model.get_connection(str(temp_memory_dir))
-        # Ensure it completed without throwing, meaning fallback occurred
-        res = conn.execute("PRAGMA journal_mode").fetchone()[0]
-        # Should fall back to delete/truncate journal mode
-        assert res.lower() in ("truncate", "delete", "memory")
-        conn.close()
+        with pytest.raises(Exception) as excinfo:
+            model.get_connection(str(temp_memory_dir))
+        assert "WAL" in str(excinfo.value)
+
 
 
 def test_unit_reconcile_schema_auto_rebuild(temp_memory_dir):
@@ -1153,3 +1151,80 @@ def test_cli_server_stderr_safety(temp_memory_dir):
     assert res.returncode != 0
     assert len(res.stdout.strip()) == 0
     assert "memory directory is not readable" in res.stderr
+
+
+def test_unit_rebuild_on_drift_bounded(temp_memory_dir):
+    """
+    TDD 31 / U-1: Rebuild-on-drift is bounded to at most once per operation, then fails.
+    """
+    check_modules_loaded()
+    
+    create_topic_file(temp_memory_dir, "topic.md", "---\ntype: project\nname: T\n---\nBody")
+    cli.reconcile(str(temp_memory_dir))
+    
+    conn = model.get_connection(str(temp_memory_dir))
+    
+    # We patch model.rebuild_database (or the connection's rebuild routine)
+    # to count its invocations and assert that the exception is propagated on second failure.
+    with patch("qhaway.model.rebuild_database", side_effect=model.rebuild_database) as mock_rebuild:
+        # Executing a query with a non-existent column should fail, trigger one rebuild,
+        # try again, fail again, and raise the exception.
+        with pytest.raises(sqlite3.OperationalError):
+            # A query wrapper or helper that handles OperationalError
+            model.execute_query_with_retry(conn, "SELECT nonexistent_column FROM nodes", str(temp_memory_dir))
+        
+        # Verify it attempted to rebuild exactly once, then propagated the error
+        assert mock_rebuild.call_count == 1
+    conn.close()
+
+
+def test_cli_destructive_rebuild_serialized(temp_memory_dir):
+    """
+    TDD 32 / TFUP-1: Destructive rebuild is serialized via .qhaway.db.reset.lock.
+    """
+    check_modules_loaded()
+    
+    create_topic_file(temp_memory_dir, "topic.md", "---\ntype: project\nname: T\n---\nBody")
+    cli.reconcile(str(temp_memory_dir))
+    
+    # We acquire the lock manually to simulate another process rebuilding
+    lock_file = temp_memory_dir / ".qhaway.db.reset.lock"
+    
+    import fcntl
+    lock_fd = open(lock_file, "a+", encoding="utf-8")
+    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    
+    try:
+        # A concurrent destructive rebuild (e.g. from version mismatch or explicit command)
+        # must fail loud or timeout because it cannot acquire the lock.
+        with pytest.raises(Exception) as excinfo:
+            model.rebuild_database(str(temp_memory_dir))
+        assert "lock" in str(excinfo.value).lower()
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+
+
+def test_unit_rebuild_only_on_true_drift(temp_memory_dir):
+    """
+    TDD 26 / FFUP-2: Rebuild fires ONLY on true drift, not on any error.
+    """
+    check_modules_loaded()
+    
+    create_topic_file(temp_memory_dir, "topic.md", "---\ntype: project\nname: T\n---\nBody")
+    cli.reconcile(str(temp_memory_dir))
+    
+    conn = model.get_connection(str(temp_memory_dir))
+    db_path = temp_memory_dir / ".qhaway.db"
+    
+    with patch("qhaway.model.rebuild_database", side_effect=model.rebuild_database) as mock_rebuild:
+        # A syntax error is a non-drift query error. It must fail loud immediately and NOT delete/rebuild the db.
+        with pytest.raises(sqlite3.OperationalError):
+            model.execute_query_with_retry(conn, "SELECT * FROM nonexistent_table_syntax_error WHERE", str(temp_memory_dir))
+        
+        # Rebuild count should be 0, and the database file must survive on disk
+        assert mock_rebuild.call_count == 0
+        assert db_path.exists()
+    conn.close()
+
+
