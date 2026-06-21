@@ -116,8 +116,9 @@ backend, not thicken this one.
    writable (they are the write surface; a stray hand-written topic file is a
    *caught* event for step 2, not a blocked one).
 5. **Two verbs only on the MCP surface.** `remember`, `recall`. No `search` (prose
-   match is yanantin's tier), no `index`/`--check` verb (those stay CLI). Every
-   extra verb is friction before the tool feels usable.
+   match is yanantin's tier); read-only inspection (`check`) and sync (`reconcile`)
+   stay **CLI**, not MCP tools (SFUP-1). Every extra verb is friction before the
+   tool feels usable.
 
 ## The MCP surface (the product)
 
@@ -316,7 +317,7 @@ MCP, CLI).
 |---|---|---|
 | `server.py` (new) | MCP server exposing `remember` + `recall`. Thin: validates/composes args; `remember` writes a file then `reconcile`; `recall` calls `project_slice_with_overflow` and returns the markdown. Success → string; failure → **structured MCP error** (C-10). | reconcile, project, parse |
 | `reconcile.py` (new) | The one shared sync op: incremental `(mtime_ns,size)` topic reconcile (bulk-load db state, in-memory compare, upsert+edge-refresh changed, cascade-delete gone) + (D)-checked, born-read-only, self-healing MEMORY.md redirect. Houses the born-read-only atomic-replace helper and the `remember` hyphen-slugify / safe-YAML composer. | model, parse, project |
-| `cli.py` (extend) | Add `qhaway reconcile` (startup-hook entry; `init` is the same op on an empty dir) and `qhaway serve` (launch MCP server; **reconciles once at startup**, C-3; resolves the memory dir via the tiered chain, OQ-2). `index` becomes a **deprecated alias for reconcile** (OQ-3) — one write path, MEMORY.md always the redirect. | reconcile, server |
+| `cli.py` (extend) | Add `qhaway reconcile` (startup-hook entry; `init` is the same op on an empty dir), `qhaway serve` (launch MCP server; **reconciles once at startup**, C-3; resolves the memory dir via the tiered chain, OQ-2), and **`qhaway check`** (read-only inspection: dangling links, would-overflow, orphan `MEMORY-<ts>.md` count — SFUP-1). `index` becomes a **deprecated alias for reconcile** (OQ-3); `index --check` becomes a thin deprecated alias for `check` (one release, then removed). One write path; MEMORY.md always the redirect. | reconcile, server |
 | `model.py` (rework) | **DuckDB → SQLite (WAL).** Add `mtime_ns` + `size` columns to `nodes`. Provide incremental upsert/delete in a `BEGIN IMMEDIATE` transaction (C-5), `PRAGMA busy_timeout` (C-4), a `fetch_nodes(conn)` introspection helper (C-2), and a persistent connection factory for `<memory_dir>/.qhaway.db`. | sqlite3 (stdlib), parse |
 | `project.py` (port) | SQL ported to SQLite via `fetch_nodes` (no `DESCRIBE`, C-2). `project_slice(...) -> str` **unchanged** (stable MVP API, C-1); new sibling `project_slice_with_overflow(...) -> ProjectionResult` carries `(markdown, overflow)` (F-7) for the MCP path. | sqlite3 (stdlib) |
 | `parse.py` | **Unchanged.** Reused wholesale. | — |
@@ -524,6 +525,19 @@ missed. All findings accepted; resolutions pinned here (tests above):
   not die: it is exactly what `recall` returns on demand. Only the
   MEMORY.md-as-full-index *output* is retired.
 
+### Third follow-up (Codex) — resolved
+
+- **SFUP-1 — `--check`'s CLI home after `index` became an alias.** `--check` is a
+  **read-only inspection** (writes nothing: dangling links in topic bodies,
+  would-overflow-before-projection, orphan `MEMORY-<ts>.md` count). It gets its own
+  dedicated command: **`qhaway check --dir ...`** — keeping a clean line between
+  *write* commands (`reconcile`) and *inspect* commands (`check`), and not tying a
+  living feature to the dying `index` alias. `qhaway index --check` remains a thin
+  **deprecated alias** for one release (script kindness), then is removed. **Test
+  homes:** the dangling-link, overflow-before-projection, and orphan-visibility tests
+  retarget from `index --check` to `qhaway check` (they assert the same invariants on
+  the new command; cf. the regression-guard retargeting, FUP-1).
+
 ## Out of scope (YAGNI / anti-sprawl — named, not silently dropped)
 
 - **`search`** (prose/fuzzy match) — yanantin's tier; would collapse the crisp
@@ -565,4 +579,3 @@ the new surfaces exactly as they did on `index`. If a port or retarget *changes 
 cure invariant's meaning* (not just its call site), that is a stop-and-review
 signal, not a license to soften the assertion. The design changed; the tests follow
 the design; the cure's guarantees are the thing held fixed across the change.
-```
