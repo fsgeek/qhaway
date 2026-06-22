@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from qhaway import model, project, server
+from qhaway import model, parse, project, server
 from qhaway.reconcile import reconcile
 
 MEMORY_NAME = "MEMORY.md"
@@ -96,6 +96,7 @@ def _check(directory: str, budget: int) -> int:
     conn = model.get_connection(directory)
     try:
         dangling = _dangling_links(conn)
+        stale_drift = _stale_drift(conn)
         full_projection = project.project_slice(conn, budget=10**12)
     finally:
         conn.close()
@@ -106,6 +107,15 @@ def _check(directory: str, budget: int) -> int:
         for src_file, dst_slug in dangling:
             sys.stdout.write(f"- {src_file} -> [[{dst_slug}]]\n")
 
+    if stale_drift:
+        exit_code = 1
+        sys.stdout.write(
+            "live memories whose body announces supersession but whose name: was "
+            "never redirected (they leak into the working set):\n"
+        )
+        for file_name, marker in stale_drift:
+            sys.stdout.write(f"- {file_name} (body says {marker}; retire it: set name: 'SUPERSEDED — see ...')\n")
+
     if len(full_projection.encode("utf-8")) > budget:
         overflow = len(full_projection.encode("utf-8")) - budget
         exit_code = 1
@@ -114,6 +124,37 @@ def _check(directory: str, budget: int) -> int:
     if exit_code == 0 and not orphans and topic_count > 2:
         sys.stdout.write("qhaway check passed\n")
     return exit_code
+
+
+def _stale_drift(conn) -> list[tuple[str, str]]:
+    """Find live nodes whose body announces supersession but whose name: was
+    never rewritten to the redirect form — so parse left status=live and the
+    projector serves them as current. This is the silent-staleness leak: the
+    conscientious in-body 'SUPERSEDED' annotation never reaches the one field
+    the retire path keys on. Conservative by design (a tombstone word as a
+    leading/emphasized token on its own line, not a passing mention) so a
+    correctly-live memory that merely discusses supersession is not nagged.
+    """
+    drift: list[tuple[str, str]] = []
+    for file_name, status, body in conn.execute(
+        "SELECT file, status, body FROM nodes ORDER BY file"
+    ).fetchall():
+        if status != "live":
+            continue
+        marker = _body_supersession_marker(body or "")
+        if marker:
+            drift.append((file_name, marker))
+    return drift
+
+
+def _body_supersession_marker(body: str) -> str | None:
+    for raw in body.splitlines():
+        line = raw.strip().lstrip("*_# ").strip()
+        upper = line.upper()
+        for word in parse.TOMBSTONE_NAMES:
+            if upper.startswith(word):
+                return word
+    return None
 
 
 def _dangling_links(conn) -> list[tuple[str, str]]:
