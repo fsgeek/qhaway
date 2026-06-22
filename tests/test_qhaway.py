@@ -723,8 +723,78 @@ def test_cli_tombstone_handling(temp_memory_dir):
     assert "old_project.md" in superseded_slice
     assert "deleted_project.md" in superseded_slice
     assert "live_topic.md" not in superseded_slice
-    
+
     conn.close()
+
+
+def test_unit_stale_drift_detector_precision(temp_memory_dir):
+    """A memory whose BODY announces supersession but whose `name:` was never
+    rewritten to the redirect form stays status=live and silently leaks into the
+    working set. _stale_drift must flag exactly those, and ONLY those: not a
+    correctly-retired node (name already redirected), nor a genuinely-live node
+    that merely mentions the word in passing.
+    """
+    check_modules_loaded()
+
+    # The real failure shape: prior instance wrote the supersession into the body
+    # (even a careful in-body header) but left name: as the live title.
+    create_topic_file(
+        temp_memory_dir,
+        "drifted.md",
+        "---\ntype: project\nname: Spine On The Goal Line\n---\n"
+        "**SUPERSEDED 2026-06-21: merged into main; this body is historical.**\n",
+    )
+    # Correctly retired: name: already carries the redirect. Must NOT be flagged
+    # (it's not drift — record and intent already agree).
+    create_topic_file(
+        temp_memory_dir,
+        "retired.md",
+        "---\ntype: project\nname: SUPERSEDED — see drifted.md\n---\n"
+        "SUPERSEDED: folded elsewhere.\n",
+    )
+    # Genuinely live, passing mention of the concept in prose. Must NOT be flagged.
+    create_topic_file(
+        temp_memory_dir,
+        "live.md",
+        "---\ntype: project\nname: How Supersession Works\n---\n"
+        "When you retire a memory the projector hides superseded nodes.\n",
+    )
+
+    cli.reconcile(str(temp_memory_dir))
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        drifted = {f for f, _ in cli._stale_drift(conn)}
+    finally:
+        conn.close()
+
+    assert drifted == {"drifted.md"}, (
+        f"detector must flag only the live-but-prose-superseded node, got {drifted}"
+    )
+
+
+def test_cli_stale_drift_reported_by_check(temp_memory_dir):
+    """`qhaway check` must surface the live-but-prose-superseded drift loudly
+    (non-zero exit, names the file), the same way it surfaces dangling links —
+    turning a silent staleness leak into a visible one.
+    """
+    check_modules_loaded()
+
+    create_topic_file(temp_memory_dir, "good_one.md", "---\ntype: project\nname: Good One\n---\nActive.\n")
+    create_topic_file(temp_memory_dir, "filler.md", "---\ntype: project\nname: Filler\n---\nActive.\n")
+    create_topic_file(
+        temp_memory_dir,
+        "leaky.md",
+        "---\ntype: project\nname: Leaky Handoff\n---\n"
+        "**SUPERSEDED 2026-06-21: this was merged; kept for history only.**\n",
+    )
+
+    cli.reconcile(str(temp_memory_dir))
+    res = run_qhaway_cli(["check", "--dir", str(temp_memory_dir)])
+
+    assert res.returncode != 0
+    full_output = res.stdout + res.stderr
+    assert "leaky.md" in full_output
+    assert "good_one.md" not in full_output.replace("good_one.md backups", "")
 
 
 def test_cli_role_filtering(temp_memory_dir):
