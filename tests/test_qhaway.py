@@ -504,6 +504,29 @@ def test_unit_remember_links_normalization(temp_memory_dir):
     assert "\n\n[[foo-bar]]" in raw_content or "\n\n- [[foo-bar]]" in raw_content
 
 
+def test_unit_remember_links_single_string_not_exploded(temp_memory_dir):
+    """
+    Defect (2026-06-21, found by dogfooding via MCP): a bare-string `links` arg
+    is iterated character-by-character (string-is-iterable), producing
+    [[s]][[e]][[r]][[v]]... instead of one [[serve-foo]]. All prior links tests
+    passed lists, so the string path the MCP boundary actually sends was uncovered.
+    """
+    check_modules_loaded()
+
+    filename = server.remember(
+        type="reference",
+        title="String Links A",
+        body="Body text",
+        description=None,
+        links="serve-is-wired",
+        memory_dir=str(temp_memory_dir),
+    )
+
+    node = parse.parse_memory_file(str(temp_memory_dir / filename))
+    # The whole string is ONE link, not one link per character.
+    assert node["links"] == ["serve-is-wired"]
+
+
 def test_unit_reconcile_sqlite_fallback(temp_memory_dir):
     """
     G-2: Connection establishment fails loud (raises error) if WAL journal_mode is not supported.
