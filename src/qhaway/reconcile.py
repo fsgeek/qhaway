@@ -27,6 +27,35 @@ REDIRECT_TEMPLATE = (
 SIDECAR_NAME = ".qhaway.json"
 MEMORY_NAME = "MEMORY.md"
 
+SIGNATURE_PREFIX = "<!-- qhaway:v1:"
+SIGNATURE_SUFFIX = "-->"
+
+
+def signature_line(unsigned_body: str) -> str:
+    return f"{SIGNATURE_PREFIX}{_sha256(unsigned_body.rstrip())}{SIGNATURE_SUFFIX}"
+
+
+def embed_signature(body: str) -> str:
+    stripped = body.rstrip()
+    return stripped + "\n" + signature_line(stripped) + "\n"
+
+
+def read_signature(text: str) -> str | None:
+    lines = text.rstrip().splitlines()
+    if not lines:
+        return None
+    last = lines[-1].strip()
+    if last.startswith(SIGNATURE_PREFIX) and last.endswith(SIGNATURE_SUFFIX):
+        return last[len(SIGNATURE_PREFIX):-len(SIGNATURE_SUFFIX)]
+    return None
+
+
+def strip_signature(text: str) -> str:
+    lines = text.rstrip().splitlines()
+    if lines and read_signature(text) is not None:
+        lines = lines[:-1]
+    return "\n".join(lines).rstrip()
+
 # Keep unicode word chars so distinct non-ASCII titles get distinct slugs
 # (collapsing every non-ASCII title to one slug silently merges unrelated
 # memories — and silently drops links that normalize identically).
