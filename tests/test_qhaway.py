@@ -1075,8 +1075,8 @@ def test_cli_redirect_cannot_truncate(temp_memory_dir):
     memory_file = temp_memory_dir / "MEMORY.md"
     content = memory_file.read_text(encoding="utf-8")
     
-    # Pinned budget is 24000, template must be tiny (<500 bytes)
-    assert len(content.encode("utf-8")) < 500
+    # Pinned budget is 24000, template must be tiny (<700 bytes; +~83 for the in-file signature)
+    assert len(content.encode("utf-8")) < 700
     assert len(content.encode("utf-8")) < project.DEFAULT_BUDGET
 
 
