@@ -169,20 +169,24 @@ def _heal_redirect(root: Path) -> None:
     memory_file = root / MEMORY_NAME
     sidecar_file = root / SIDECAR_NAME
     override = root / "REDIRECT.md"
-    desired = override.read_text(encoding="utf-8") if override.exists() else REDIRECT_TEMPLATE
-    desired_hash = _sha256(desired)
+    desired_body = override.read_text(encoding="utf-8") if override.exists() else REDIRECT_TEMPLATE
+    desired = embed_signature(desired_body)
 
     if memory_file.exists():
         current = memory_file.read_text(encoding="utf-8")
-        if current == desired:
-            _write_sidecar(sidecar_file, desired_hash)  # repair/idempotent (C-9)
-            return
-        recorded = _recorded_hash(sidecar_file)
-        if _sha256(current) != recorded:
-            memory_file.rename(_backup_path(memory_file))  # (D) preserve hand edit
+        sig = read_signature(current)
+        if sig is None:
+            # (2) user original — snapshot FIRST, then replace
+            memory_file.rename(_backup_path(memory_file))
+        elif sig != _sha256(strip_signature(current)):
+            # (4) our file, hand-edited — preserve the edit, then regenerate
+            memory_file.rename(_backup_path(memory_file))
+        else:
+            # (3) ours, unchanged — fall through to idempotent rewrite, no backup
+            pass
 
     write_readonly(memory_file, desired)
-    _write_sidecar(sidecar_file, desired_hash)
+    _write_sidecar(sidecar_file, _sha256(strip_signature(desired)))
 
 
 def _sha256(text: str) -> str:
