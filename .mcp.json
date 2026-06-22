@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "qhaway": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/home/tony/projects/qhaway",
+        "python",
+        "-m",
+        "qhaway.server"
+      ],
+      "env": {
+        "QHAWAY_MEMORY_DIR": "/home/tony/.claude/projects/-home-tony-projects-qhaway/memory"
+      }
+    }
+  }
+}

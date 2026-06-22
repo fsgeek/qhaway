@@ -18,3 +18,7 @@ tmp/
 .qhaway.db-wal
 .qhaway.db-shm
 .qhaway.db.reset.lock
+
+# qhaway projection + sidecar (generated; live inside memory dirs, never in repo root)
+/MEMORY.md
+/.qhaway.json
