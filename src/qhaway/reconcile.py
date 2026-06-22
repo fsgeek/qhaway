@@ -16,6 +16,8 @@ from qhaway import model
 
 REDIRECT_TEMPLATE = (
     "# Memory\n\n"
+    "**Before acting on any belief about this project, call `recall()` first** "
+    "— your context is stale; `recall()` is the latest word.\n\n"
     "Your memory lives in a database, not this file. Use the MCP tools:\n\n"
     "- `recall(type?, role?, status?)` — read your memory (omit args for the working set)\n"
     "- `remember(type, title, body, ...)` — write a memory\n\n"
@@ -68,6 +70,8 @@ def compose_frontmatter(type: str, title: str, description: str | None) -> str:
 
 def compose_topic_file(type, title, body, description, links) -> str:
     text = compose_frontmatter(type, title, description) + body
+    if isinstance(links, str):
+        links = [links]
     if links:
         seen: dict[str, None] = {}
         for link in links:
@@ -135,7 +139,8 @@ def _reconcile_nodes(conn, root: Path) -> None:
 def _heal_redirect(root: Path) -> None:
     memory_file = root / MEMORY_NAME
     sidecar_file = root / SIDECAR_NAME
-    desired = REDIRECT_TEMPLATE
+    override = root / "REDIRECT.md"
+    desired = override.read_text(encoding="utf-8") if override.exists() else REDIRECT_TEMPLATE
     desired_hash = _sha256(desired)
 
     if memory_file.exists():

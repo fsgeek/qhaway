@@ -53,9 +53,7 @@ def _serve(directory: str) -> int:
     if not os.path.isdir(directory):
         sys.stderr.write(f"memory directory is not readable: {directory}\n")
         return 1
-    server.initialize_server(directory)
-    # The blocking MCP event loop is started here in production; tests only
-    # assert the pre-serve failure path and initialize_server behavior.
+    server.run(directory)
     return 0
 
 

@@ -115,7 +115,7 @@ writer updates it via atomic temp-file + replace.
 qhaway index
   → scan the memory directory
   → parse each file into a node (frontmatter type, filename role, links, body)
-  → build an index of nodes + links in DuckDB
+  → build an index of nodes + links in SQLite
   → project the working set under the byte budget,
     appending a declared-omissions footer for anything set aside
   → write MEMORY.md
