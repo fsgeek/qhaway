@@ -1,15 +1,39 @@
 #!/usr/bin/env bash
-# qhaway plugin launcher — runs the bundled package with no separate install.
+# qhaway plugin launcher.
+#
+# Resolves an interpreter that can import the INSTALLED qhaway package (the repo
+# ships one source tree — src/qhaway — and does NOT bundle a copy here). Before
+# running any qhaway logic, it verifies the package and its dependencies import;
+# if they don't, it prints a clear error and exits non-zero WITHOUT touching the
+# user's memory directory (do no harm — a half-run on a broken environment must
+# never write a partial MEMORY.md).
+#
+# MVP install requirement (see qhaway-plugin/README.md): `qhaway` must be
+# importable by the resolved interpreter — e.g. `pip install qhaway` (which pulls
+# pyyaml + mcp), or place a ready venv at ${CLAUDE_PLUGIN_ROOT}/.venv. Shipping a
+# self-contained venv with pinned deps is the planned post-MVP hardening.
 set -euo pipefail
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 plugin_root="$(dirname "$here")"
-src="$plugin_root/src"
 
-# Prefer a bundled venv interpreter if present; else the system python3.
+# Prefer a venv bundled alongside the plugin (post-MVP path); else system python3.
 if [ -x "$plugin_root/.venv/bin/python" ]; then
   py="$plugin_root/.venv/bin/python"
-else
+elif command -v python3 >/dev/null 2>&1; then
   py="$(command -v python3)"
+else
+  echo "qhaway: no python3 found on PATH; cannot run." >&2
+  exit 1
 fi
 
-PYTHONPATH="$src${PYTHONPATH:+:$PYTHONPATH}" exec "$py" -m qhaway.cli "$@"
+# Dep guard: confirm the package and its deps import BEFORE doing anything.
+# On failure, fail loudly and touch nothing.
+if ! "$py" -c "import qhaway, yaml, mcp" >/dev/null 2>&1; then
+  echo "qhaway: the 'qhaway' package (and its deps pyyaml, mcp) is not importable by $py." >&2
+  echo "qhaway: install it (e.g. 'pip install qhaway') or provide a ready venv at" >&2
+  echo "        ${plugin_root}/.venv. No memory files were touched." >&2
+  exit 1
+fi
+
+exec "$py" -m qhaway.cli "$@"
