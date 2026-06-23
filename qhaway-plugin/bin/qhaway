@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# qhaway plugin launcher — runs the bundled package with no separate install.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+plugin_root="$(dirname "$here")"
+src="$plugin_root/src"
+
+# Prefer a bundled venv interpreter if present; else the system python3.
+if [ -x "$plugin_root/.venv/bin/python" ]; then
+  py="$plugin_root/.venv/bin/python"
+else
+  py="$(command -v python3)"
+fi
+
+PYTHONPATH="$src${PYTHONPATH:+:$PYTHONPATH}" exec "$py" -m qhaway.cli "$@"
