@@ -25,6 +25,7 @@ def main(args: list[str] | None = None) -> int:
         p.add_argument("--status", default="live")
         p.add_argument("--dry-run", action="store_true")
         p.add_argument("--check", action="store_true")  # deprecated alias on index
+        p.add_argument("--emit", action="store_true")
 
     ns = parser.parse_args(args)
     directory = _resolve_dir(ns)
@@ -42,6 +43,12 @@ def main(args: list[str] | None = None) -> int:
     except FileNotFoundError as exc:
         sys.stderr.write(f"{exc}\n")
         return 1
+    if getattr(ns, "emit", False):
+        conn = model.get_connection(directory)
+        try:
+            sys.stdout.write(project.project_slice(conn, budget=ns.budget))
+        finally:
+            conn.close()
     return 0
 
 
