@@ -1,6 +1,5 @@
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 BIN = Path(__file__).resolve().parents[1] / "qhaway-plugin" / "bin" / "qhaway"
