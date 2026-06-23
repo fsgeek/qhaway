@@ -22,5 +22,7 @@ def test_hooks_register_sessionstart_and_sessionend():
 
 def test_mcp_json_registers_server():
     j = json.loads((ROOT / ".mcp.json").read_text())
-    assert "qhaway" in j["mcpServers"]
-    assert "${CLAUDE_PROJECT_DIR}" in json.dumps(j)
+    server = j["mcpServers"]["qhaway"]
+    assert server["command"] == "${CLAUDE_PLUGIN_ROOT}/bin/qhaway"
+    assert "serve" in server["args"]
+    assert "${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory" in server["args"]
