@@ -5,7 +5,7 @@ caught: after a first-touch snapshot, `exit` used to restore the stale original
 instead of writing the current index. These tests pin the corrected behavior.
 """
 from qhaway import cli, reconcile
-from qhaway import project
+from qhaway import model, project
 
 
 def _seed_corpus(tmp_path, n=3):
@@ -61,6 +61,33 @@ def test_exit_index_stays_within_budget(tmp_path):
 
     final = (tmp_path / "MEMORY.md").read_text()
     # The signed, footer-bearing exit file must stay under the projection budget.
+    assert len(final.encode("utf-8")) <= project.DEFAULT_BUDGET
+
+
+def test_exit_footer_count_matches_actual_omissions(tmp_path):
+    # Honesty: the "N set aside" count must equal what the SHIPPED file actually
+    # omits (computed from the final reduced-budget projection), not an estimate
+    # from a full-budget probe. qhaway exists to declare omissions truthfully.
+    import re
+
+    # Force overflow: many memories with long bodies so the budget is exceeded.
+    for i in range(400):
+        title = f"overflow memory {i:03d}"
+        body = f"body for memory {i} " * 20
+        (tmp_path / f"{reconcile.slugify(title)}.md").write_text(
+            reconcile.compose_topic_file("project", title, body, None, None)
+        )
+    (tmp_path / "MEMORY.md").write_text("# unsigned\n\nx\n")
+
+    cli.main(["reconcile", "--dir", str(tmp_path), "--emit"])
+    cli.main(["exit", "--dir", str(tmp_path)])
+
+    final = (tmp_path / "MEMORY.md").read_text()
+    claimed = int(re.search(r"(\d+) set aside", final).group(1))
+    # count the links actually present in the shipped index
+    present = len(re.findall(r"\]\([^)]+\.md\)", final))
+    total = len(model.topic_files(tmp_path))
+    assert claimed == total - present  # footer tells the truth about this file
     assert len(final.encode("utf-8")) <= project.DEFAULT_BUDGET
 
 
