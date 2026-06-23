@@ -108,17 +108,28 @@ def _exit(directory: str, budget: int) -> int:
     conn = model.get_connection(directory)
     try:
         total = len(model.topic_files(memory_dir))
-        # Probe at full budget to learn the omitted count, compose the footer,
-        # then re-project against a budget reduced by the footer + signature so
-        # the final signed, footer-bearing file stays under budget.
+
+        def compose_footer(omitted: int) -> str:
+            return (
+                f"\n\n---\n_qhaway exit index — {total} memories under {budget} "
+                f"bytes; {omitted} set aside. Self-sufficient static index "
+                "(qhaway disabled)._\n"
+            )
+
+        # Probe at full budget only to SIZE the reserve (footer + signature bytes);
+        # the displayed "set aside" count comes from the FINAL reduced-budget
+        # projection, so the footer reports what the shipped file actually omits —
+        # honest declaration is the whole point. The count's digit width is bounded
+        # (a few hundred memories at most), so any drift between probe and final
+        # count is sub-byte against the reserve and never pushes over budget.
         probe = project.project_slice_with_overflow(conn, budget=budget)
-        omitted = sum(probe.overflow.omitted_counts.values())
-        footer = (
-            f"\n\n---\n_qhaway exit index — {total} memories under {budget} bytes; "
-            f"{omitted} set aside. Self-sufficient static index (qhaway disabled)._\n"
+        reserve = (
+            len(compose_footer(sum(probe.overflow.omitted_counts.values())).encode("utf-8"))
+            + len(reconcile_mod.signature_line(""))
+            + 2
         )
-        reserve = len(footer.encode("utf-8")) + len(reconcile_mod.signature_line("")) + 2
         result = project.project_slice_with_overflow(conn, budget=max(0, budget - reserve))
+        footer = compose_footer(sum(result.overflow.omitted_counts.values()))
     finally:
         conn.close()
     reconcile_mod.write_readonly(
