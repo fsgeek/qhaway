@@ -21,12 +21,14 @@ try:
     import qhaway.project as project
     import qhaway.cli as cli
     import qhaway.server as server
+    import qhaway.reconcile as reconcile
 except ImportError:
     parse = None
     model = None
     project = None
     cli = None
     server = None
+    reconcile = None
 
 
 def check_modules_loaded():
@@ -875,10 +877,17 @@ def test_cli_non_destructive_edit_handling(temp_memory_dir):
     
     # Reconcile again -> triggers preserve
     cli.reconcile(str(temp_memory_dir))
-    
-    backups = glob.glob(str(temp_memory_dir / "MEMORY-*.md"))
-    assert len(backups) == 1
-    assert Path(backups[0]).read_text(encoding="utf-8") == edited_content
+
+    # The edit appended past the signature line, so the file reads as unsigned and
+    # is captured (verbatim, never destroyed) under the distinguished pre-install
+    # name. The record is preserved — which is the property this test guards.
+    preserved = sorted(glob.glob(str(temp_memory_dir / "MEMORY-*.md"))) + (
+        [str(temp_memory_dir / reconcile.PREINSTALL_NAME)]
+        if (temp_memory_dir / reconcile.PREINSTALL_NAME).exists()
+        else []
+    )
+    contents = [Path(p).read_text(encoding="utf-8") for p in preserved]
+    assert edited_content in contents
 
 
 def test_cli_budget_is_token_pinned():
@@ -1008,10 +1017,14 @@ def test_cli_preservation_cant_self_destruct(temp_memory_dir):
     memory_file.write_text(edit_2, encoding="utf-8")
     cli.reconcile(str(temp_memory_dir))
     
-    backups = sorted(glob.glob(str(temp_memory_dir / "MEMORY-*.md")))
-    assert len(backups) >= 2
-    
-    contents = [Path(b).read_text(encoding="utf-8") for b in backups]
+    # Both edits appended past the signature, so each reads as unsigned. The first
+    # is captured under the distinguished pre-install name; the second (preinstall
+    # already taken) falls back to a timestamped backup. Neither record is lost —
+    # the anti-self-destruct property holds across both name patterns.
+    preserved = sorted(glob.glob(str(temp_memory_dir / "MEMORY-*.md")))
+    if (temp_memory_dir / reconcile.PREINSTALL_NAME).exists():
+        preserved.append(str(temp_memory_dir / reconcile.PREINSTALL_NAME))
+    contents = [Path(b).read_text(encoding="utf-8") for b in preserved]
     assert edit_1 in contents
     assert edit_2 in contents
 

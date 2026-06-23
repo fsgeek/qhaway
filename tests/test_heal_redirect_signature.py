@@ -19,9 +19,10 @@ def test_user_original_is_snapshotted_then_replaced(tmp_path):
     original = "# My hand-written memory\n\nimportant human notes\n"
     (tmp_path / "MEMORY.md").write_text(original)
     _heal(tmp_path)
-    backups = list(tmp_path.glob("MEMORY-*.md"))
-    assert len(backups) == 1
-    assert backups[0].read_text() == original  # original preserved verbatim
+    # The user original is snapshotted under its distinguished pre-install name.
+    preinstall = tmp_path / reconcile.PREINSTALL_NAME
+    assert preinstall.exists()
+    assert preinstall.read_text() == original  # original preserved verbatim
     assert reconcile.read_signature((tmp_path / "MEMORY.md").read_text()) is not None
 
 
