@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from qhaway import model, parse, project, server
+from qhaway import reconcile as reconcile_mod
 from qhaway.reconcile import reconcile
 
 MEMORY_NAME = "MEMORY.md"
@@ -16,7 +17,7 @@ MEMORY_NAME = "MEMORY.md"
 def main(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="qhaway")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("reconcile", "check", "serve", "index"):
+    for name in ("reconcile", "check", "serve", "index", "exit"):
         p = sub.add_parser(name)
         p.add_argument("--dir")
         p.add_argument("--budget", type=int, default=project.DEFAULT_BUDGET)
@@ -32,6 +33,8 @@ def main(args: list[str] | None = None) -> int:
 
     if ns.command == "serve":
         return _serve(directory)
+    if ns.command == "exit":
+        return _exit(directory, ns.budget)
     if ns.command == "check" or (ns.command == "index" and ns.check):
         return _check(directory, ns.budget)
     if ns.command == "index" and ns.dry_run:
@@ -80,6 +83,39 @@ def _dry_run(directory: str, ns) -> int:
     finally:
         conn.close()
     sys.stdout.write(output)
+    return 0
+
+
+def _exit(directory: str, budget: int) -> int:
+    memory_dir = Path(directory)
+    if not memory_dir.is_dir():
+        sys.stderr.write(f"memory directory is not readable: {memory_dir}\n")
+        return 1
+
+    # If a hand-authored original was snapshotted (unsigned backup), restore it.
+    for backup in _orphan_files(memory_dir):  # oldest first (sorted by name)
+        if reconcile_mod.read_signature(backup.read_text(encoding="utf-8")) is None:
+            reconcile_mod.write_readonly(
+                memory_dir / MEMORY_NAME, backup.read_text(encoding="utf-8")
+            )
+            return 0
+
+    reconcile(directory)
+    conn = model.get_connection(directory)
+    try:
+        result = project.project_slice_with_overflow(conn, budget=budget)
+        total = len(model.topic_files(memory_dir))
+        omitted = sum(result.overflow.omitted_counts.values())
+    finally:
+        conn.close()
+    footer = (
+        f"\n\n---\n_qhaway exit index — {total} memories, projected under "
+        f"{budget} bytes. Omitted: {omitted} "
+        "(run `recall()` after re-enable for the full working set)._\n"
+    )
+    reconcile_mod.write_readonly(
+        memory_dir / MEMORY_NAME, reconcile_mod.embed_signature(result.markdown + footer)
+    )
     return 0
 
 
