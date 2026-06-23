@@ -232,7 +232,10 @@ def topic_files(memory_dir: str | Path) -> list[Path]:
     root = Path(memory_dir)
     files: list[Path] = []
     for path in root.glob("*.md"):
-        if path.name == "MEMORY.md" or path.name.startswith("MEMORY-"):
+        # Exclude qhaway's own MEMORY.md artifacts: the derived index/redirect,
+        # timestamped hand-edit backups (MEMORY-<ts>.md), and the pre-install
+        # snapshot (MEMORY.preinstall.md). They are not source topic memories.
+        if path.name == "MEMORY.md" or path.name.startswith(("MEMORY-", "MEMORY.")):
             continue
         files.append(path)
     return sorted(files, key=lambda p: p.name)

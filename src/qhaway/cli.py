@@ -87,32 +87,40 @@ def _dry_run(directory: str, ns) -> int:
 
 
 def _exit(directory: str, budget: int) -> int:
+    """SessionEnd: leave a current, self-sufficient, truncation-proof index in
+    place — NOT the pre-install original. qhaway borrows MEMORY.md while enabled
+    and returns a current honest index when it leaves; the original is preserved
+    under its distinguished name (MEMORY.preinstall.md) for an explicit uninstall,
+    never handed back here. Worst case (a future loader truncates the file), the
+    index degrades gracefully and declares what it set aside; the raw original
+    would truncate into silent staleness — the exact failure qhaway prevents.
+
+    The index is budgeted (the footer's bytes are reserved within the budget, not
+    appended past it) and carries no recall()/remember() instructions, since the
+    hooks are not guaranteed to run once the plugin is disabled.
+    """
     memory_dir = Path(directory)
     if not memory_dir.is_dir():
         sys.stderr.write(f"memory directory is not readable: {memory_dir}\n")
         return 1
 
-    # If a hand-authored original was snapshotted (unsigned backup), restore it.
-    for backup in _orphan_files(memory_dir):  # oldest first (sorted by name)
-        if reconcile_mod.read_signature(backup.read_text(encoding="utf-8")) is None:
-            reconcile_mod.write_readonly(
-                memory_dir / MEMORY_NAME, backup.read_text(encoding="utf-8")
-            )
-            return 0
-
     reconcile(directory)
     conn = model.get_connection(directory)
     try:
-        result = project.project_slice_with_overflow(conn, budget=budget)
         total = len(model.topic_files(memory_dir))
-        omitted = sum(result.overflow.omitted_counts.values())
+        # Probe at full budget to learn the omitted count, compose the footer,
+        # then re-project against a budget reduced by the footer + signature so
+        # the final signed, footer-bearing file stays under budget.
+        probe = project.project_slice_with_overflow(conn, budget=budget)
+        omitted = sum(probe.overflow.omitted_counts.values())
+        footer = (
+            f"\n\n---\n_qhaway exit index — {total} memories under {budget} bytes; "
+            f"{omitted} set aside. Self-sufficient static index (qhaway disabled)._\n"
+        )
+        reserve = len(footer.encode("utf-8")) + len(reconcile_mod.signature_line("")) + 2
+        result = project.project_slice_with_overflow(conn, budget=max(0, budget - reserve))
     finally:
         conn.close()
-    footer = (
-        f"\n\n---\n_qhaway exit index — {total} memories, projected under "
-        f"{budget} bytes. Omitted: {omitted} "
-        "(run `recall()` after re-enable for the full working set)._\n"
-    )
     reconcile_mod.write_readonly(
         memory_dir / MEMORY_NAME, reconcile_mod.embed_signature(result.markdown + footer)
     )

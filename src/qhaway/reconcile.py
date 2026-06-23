@@ -176,8 +176,13 @@ def _heal_redirect(root: Path) -> None:
         current = memory_file.read_text(encoding="utf-8")
         sig = read_signature(current)
         if sig is None:
-            # (2) user original — snapshot FIRST, then replace
-            memory_file.rename(_backup_path(memory_file))
+            # (2) user original — snapshot FIRST, then replace. Use a distinguished,
+            # durable name: this is the PRE-INSTALL original, the restore source for
+            # an explicit uninstall. Captured once; if it already exists (a prior
+            # boot took it), this original is itself a later hand-authored file, so
+            # fall back to a timestamped backup rather than clobbering the first.
+            preinstall = _preinstall_path(memory_file)
+            memory_file.rename(preinstall if not preinstall.exists() else _backup_path(memory_file))
         elif sig != _sha256(strip_signature(current)):
             # (4) our file, hand-edited — preserve the edit, then regenerate
             memory_file.rename(_backup_path(memory_file))
@@ -211,6 +216,16 @@ def _write_sidecar(sidecar_file: Path, output_hash: str) -> None:
         json.dumps({"version": 1, "last_output_hash": output_hash}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+PREINSTALL_NAME = "MEMORY.preinstall.md"
+
+
+def _preinstall_path(memory_file: Path) -> Path:
+    """The distinguished, stable name for the pre-install original — the restore
+    source for an explicit uninstall. Distinct from routine timestamped hand-edit
+    backups so 'the human's original' is always unambiguous."""
+    return memory_file.with_name(PREINSTALL_NAME)
 
 
 def _backup_path(memory_file: Path) -> Path:
