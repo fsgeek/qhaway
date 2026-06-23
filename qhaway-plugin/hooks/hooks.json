@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/qhaway reconcile --dir \"${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory\" --emit"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/qhaway exit --dir \"${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "qhaway": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/qhaway",
+      "args": ["serve", "--dir", "${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory"]
+    }
+  }
+}
