@@ -17,9 +17,12 @@ def test_hooks_register_sessionstart_and_sessionend():
     flat = json.dumps(h)
     assert "reconcile" in flat and "--emit" in flat  # start delivers
     assert "exit" in flat                              # end writes index
-    assert "${CLAUDE_PROJECT_DIR}" in flat             # per-project memory dir
     assert "uvx" in flat                               # resolved via uvx
     assert "--python" in flat and "3.14" in flat       # pinned interpreter
+    # No hardcoded --dir: the commands derive the slug dir from CLAUDE_PROJECT_DIR
+    # themselves, so hooks and the MCP server can never point at different dirs.
+    assert "qhaway-memory" not in flat
+    assert "--dir" not in flat
 
 
 def test_mcp_json_registers_server():
@@ -28,4 +31,6 @@ def test_mcp_json_registers_server():
     assert server["command"] == "uvx"
     args = server["args"]
     assert args[:4] == ["--python", "3.14", "qhaway", "serve"]
-    assert "${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory" in args
+    # No hardcoded --dir: serve derives the slug dir from CLAUDE_PROJECT_DIR.
+    assert "--dir" not in args
+    assert not any("qhaway-memory" in a for a in args)
