@@ -31,3 +31,14 @@ def derive_from_env(environ, home: Path | None = None) -> Path | None:
     if not project_dir:
         return None
     return memory_dir_for(project_dir, home=home)
+
+
+def has_memory(memory_dir: Path) -> bool:
+    """True iff the dir exists and holds at least one topic .md file. A lone
+    MEMORY.md (or MEMORY.* artifact) with no topic files is NOT "has memory"."""
+    if not memory_dir.is_dir():
+        return False
+    for entry in memory_dir.glob("*.md"):
+        if entry.is_file() and not entry.name.startswith("MEMORY"):
+            return True
+    return False
