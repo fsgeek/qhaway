@@ -835,6 +835,29 @@ def test_cli_dry_run_action(temp_memory_dir):
     assert not (temp_memory_dir / "MEMORY.md").exists()
 
 
+def test_cli_filtered_index_prints_slice_without_writing(temp_memory_dir):
+    """
+    The omissions footer instructs `qhaway index --type <t>` to SEE memories the
+    default index set aside. That command must PRINT the filtered slice to stdout
+    and must NOT overwrite MEMORY.md — it is an inspection command, not a write.
+    Regression: it previously fell through to the reconcile alias, ignored --type,
+    printed nothing, and silently rebuilt MEMORY.md.
+    """
+    check_modules_loaded()
+
+    create_topic_file(temp_memory_dir, "proj.md", "---\ntype: project\nname: Proj One\ndescription: a project hook\n---\nBody")
+    create_topic_file(temp_memory_dir, "usr.md", "---\ntype: user\nname: User One\ndescription: a user hook\n---\nBody")
+
+    res = run_qhaway_cli(["index", "--dir", str(temp_memory_dir), "--type", "project"])
+    assert res.returncode == 0
+    # prints the project slice
+    assert "Proj One" in res.stdout
+    # filtered: the user memory is not in a project-typed slice
+    assert "User One" not in res.stdout
+    # does NOT write/overwrite MEMORY.md (inspection, not mutation)
+    assert not (temp_memory_dir / "MEMORY.md").exists()
+
+
 def test_cli_machine_contract_format(temp_memory_dir):
     """
     Test 5: Emitted project slices conform to - [Title](file) — Hook pattern.
