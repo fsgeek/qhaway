@@ -2,7 +2,7 @@
   "mcpServers": {
     "qhaway": {
       "command": "uvx",
-      "args": ["--python", "3.14", "qhaway", "serve", "--dir", "${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory"]
+      "args": ["--python", "3.14", "qhaway", "serve"]
     }
   }
 }

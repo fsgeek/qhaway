@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from qhaway import model, parse, project, server
+from qhaway import model, parse, paths, project, server
 from qhaway import reconcile as reconcile_mod
 from qhaway.reconcile import reconcile
 
@@ -61,8 +61,19 @@ def main(args: list[str] | None = None) -> int:
     return 0
 
 
-def _resolve_dir(ns) -> str:
-    return ns.dir or os.environ.get("QHAWAY_MEMORY_DIR") or "."
+def _resolve_dir(ns, environ=None, home=None) -> str:
+    """Resolve the memory dir. Explicit --dir wins, then QHAWAY_MEMORY_DIR, then
+    the slug dir derived from CLAUDE_PROJECT_DIR (so serve, session-start, and
+    session-end all land on the same per-project dir), then the cwd."""
+    environ = os.environ if environ is None else environ
+    if ns.dir:
+        return ns.dir
+    if environ.get("QHAWAY_MEMORY_DIR"):
+        return environ["QHAWAY_MEMORY_DIR"]
+    derived = paths.derive_from_env(environ, home=home)
+    if derived is not None:
+        return str(derived)
+    return "."
 
 
 def _serve(directory: str) -> int:

@@ -2,6 +2,26 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **AMENDMENT 2026-06-25 — split-brain fix landed; Task 1 is DONE and EXTENDED.**
+> As originally written this plan wired `session-start`/`session-end` through
+> `paths.py` but left `serve` (and the plugin manifests) pointing at the old
+> project-local dir `${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory` — a split brain
+> (hook writes the slug dir, MCP server reads project-local). The single source of
+> truth is ONE derivation, THREE callers. This is now implemented:
+> - `src/qhaway/paths.py` — created (the Task 1 module, exact signatures below).
+> - `cli._resolve_dir(ns, environ, home)` — derives the slug dir from
+>   `CLAUDE_PROJECT_DIR` when no explicit `--dir`/`QHAWAY_MEMORY_DIR` is given, so
+>   `serve`, `reconcile` (start), and `exit` (end) all land on the SAME dir.
+> - `qhaway-plugin/.mcp.json` and `qhaway-plugin/hooks/hooks.json` — the
+>   hardcoded `--dir "${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory"` is REMOVED from
+>   all three commands; they derive their own dir at runtime.
+> - Tests: `tests/test_paths.py` (incl. serve==start==end resolution) + updated
+>   `tests/test_plugin_manifest.py` assert no hardcoded `--dir` survives.
+> Skip Task 1's "create paths.py / write failing test" steps — they are green.
+> Do NOT re-introduce a `--dir` slug-string into the manifests; that rebuilds the
+> split. See project memory
+> `init-resolves-split-brain-serve-must-derive-the-slug-dir-not-accept-a-hardcoded-dir`.
+
 **Goal:** Add `uvx qhaway init` / `uvx qhaway uninstall` — one-command, idempotent setup that wires qhaway into user-scope Claude Code config, plus self-gating `session-start` / `session-end` subcommands that activate only in projects that have memory.
 
 **Architecture:** A new `setup.py` module owns the user-scope settings surgery (derive paths, write/remove a tagged hook block, idempotent + non-destructive). A new `paths.py` module owns deriving Claude Code's per-project memory dir from `CLAUDE_PROJECT_DIR` (verified slug rule: replace `/` with `-`). The CLI gains four subcommands that delegate to these modules. `session-start`/`session-end` derive the dir, gate on *topic files present*, and no-op cleanly when a project has no memory — so one user-scope install serves all projects and no hardcoded path can go stale.
