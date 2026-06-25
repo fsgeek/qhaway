@@ -69,3 +69,28 @@ def test_explicit_dir_still_wins_over_derivation():
     env = {"CLAUDE_PROJECT_DIR": "/home/tony/projects/qhaway"}
     got = _resolve(["serve", "--dir", "/tmp/explicit"], env)
     assert got == "/tmp/explicit"
+
+
+def test_has_memory_false_when_absent(tmp_path):
+    assert paths.has_memory(tmp_path / "nope") is False
+
+
+def test_has_memory_false_when_empty(tmp_path):
+    (tmp_path).mkdir(exist_ok=True)
+    assert paths.has_memory(tmp_path) is False
+
+
+def test_has_memory_false_with_only_memory_md(tmp_path):
+    (tmp_path / "MEMORY.md").write_text("hand written, no topics\n")
+    assert paths.has_memory(tmp_path) is False
+
+
+def test_has_memory_true_with_a_topic_file(tmp_path):
+    (tmp_path / "a-topic.md").write_text("---\nname: a\n---\nbody\n")
+    assert paths.has_memory(tmp_path) is True
+
+
+def test_has_memory_ignores_memory_artifacts(tmp_path):
+    (tmp_path / "MEMORY.md").write_text("x")
+    (tmp_path / "MEMORY.preinstall.md").write_text("y")
+    assert paths.has_memory(tmp_path) is False
