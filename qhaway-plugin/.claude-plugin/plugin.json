@@ -1,6 +1,6 @@
 {
   "name": "qhaway",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Borrowed-while-enabled memory: delivers the must-not-re-learn set at every session start, returns a current signed index on exit.",
   "author": { "name": "Tony", "email": "fsgeek@cs.ubc.ca" },
   "defaultEnabled": false
