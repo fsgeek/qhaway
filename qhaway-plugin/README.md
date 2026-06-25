@@ -18,14 +18,23 @@ you install uv.
 
 ## Install
 
+You don't install the plugin to a location — you point Claude Code at the
+directory where it already lives. Clone the repo, then launch with
+`--plugin-dir`:
+
 ```sh
-claude plugin install --plugin-dir /path/to/qhaway-plugin
+git clone https://github.com/fsgeek/qhaway
+claude --plugin-dir qhaway/qhaway-plugin
 ```
 
-The plugin ships **disabled by default** (`defaultEnabled: false`), so you opt
-into the auto-running hooks by enabling it. On the first session start, `uvx`
-resolves qhaway (a few seconds, once); every session afterward hits the uvx
-cache and is instant.
+`--plugin-dir` loads the plugin **for that session** from the given directory
+(it does not copy or register it anywhere). The plugin ships **disabled by
+default** (`defaultEnabled: false`), so enable it from `/plugin` to opt into the
+auto-running hooks. On the first session start, `uvx` resolves qhaway (a few
+seconds, once); every session afterward hits the uvx cache and is instant.
+
+To turn it off, disable it from `/plugin` — the hooks stop firing and your
+`MEMORY.md` is left as a plain, self-sufficient index.
 
 ## How resolution works
 
