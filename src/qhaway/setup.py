@@ -29,7 +29,13 @@ def is_installed(settings: dict) -> bool:
 def _load(path: Path) -> dict:
     if not path.exists():
         return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    text = path.read_text(encoding="utf-8")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{path} is not valid JSON ({exc}); qhaway left it untouched."
+        ) from exc
 
 
 def _atomic_write(path: Path, data: dict) -> None:
