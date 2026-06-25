@@ -37,7 +37,13 @@ def main(args: list[str] | None = None) -> int:
         return _exit(directory, ns.budget)
     if ns.command == "check" or (ns.command == "index" and ns.check):
         return _check(directory, ns.budget)
-    if ns.command == "index" and ns.dry_run:
+    # A filtered index (--type/--role/--status) is an INSPECTION command — the
+    # omissions footer points users here to SEE what the default index set aside.
+    # It prints the slice and must not overwrite the balanced MEMORY.md. --dry-run
+    # is the explicit form of the same print-only path.
+    if ns.command == "index" and (
+        ns.dry_run or ns.content_type or ns.role or ns.status
+    ):
         return _dry_run(directory, ns)
 
     # reconcile, and index-as-reconcile-alias
