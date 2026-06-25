@@ -79,7 +79,9 @@ def test_install_registers_mcp_server(tmp_path):
     d = _read(m)
     assert "qhaway" in d["mcpServers"]
     server = d["mcpServers"]["qhaway"]
-    assert server["command"] == "uvx"
+    # command is uvx, resolved to an absolute path when on PATH (CC spawns with a
+    # minimal PATH); bare "uvx" only as the unresolvable fallback.
+    assert server["command"].endswith("uvx")
     assert "serve" in server["args"]
     # no hardcoded --dir: serve derives the slug dir from CLAUDE_PROJECT_DIR
     assert "--dir" not in server["args"]
@@ -133,3 +135,35 @@ def test_uninstall_removes_mcp_server_too(tmp_path):
     d = _read(m)
     assert "qhaway" not in d["mcpServers"]
     assert d["mcpServers"]["serena"] == {"command": "x"}  # other server kept
+
+
+# --- PATH resolution: CC spawns hooks/MCP with a minimal PATH that may lack
+# ~/.local/bin, so a bare "uvx" command fails to resolve. install must write the
+# absolute path resolved at install time (when qhaway's own PATH is correct). ---
+
+
+def test_mcp_command_is_absolute_uvx_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup.shutil, "which", lambda cmd: "/home/u/.local/bin/uvx")
+    s = tmp_path / "settings.json"
+    m = tmp_path / ".claude.json"
+    setup.install(s, mcp_config_path=m)
+    server = _read(m)["mcpServers"]["qhaway"]
+    assert server["command"] == "/home/u/.local/bin/uvx"
+
+
+def test_hook_commands_use_absolute_uvx_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup.shutil, "which", lambda cmd: "/home/u/.local/bin/uvx")
+    s = tmp_path / "settings.json"
+    setup.install(s)
+    flat = json.dumps(_read(s))
+    assert "/home/u/.local/bin/uvx qhaway session-start" in flat
+    assert "/home/u/.local/bin/uvx qhaway session-end" in flat
+
+
+def test_falls_back_to_bare_uvx_when_unresolvable(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup.shutil, "which", lambda cmd: None)
+    s = tmp_path / "settings.json"
+    m = tmp_path / ".claude.json"
+    setup.install(s, mcp_config_path=m)
+    assert _read(m)["mcpServers"]["qhaway"]["command"] == "uvx"
+    assert "uvx qhaway session-start" in json.dumps(_read(s))
