@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -19,15 +20,29 @@ MARKER = "qhaway-managed"
 MCP_NAME = "qhaway"
 
 
+def _uvx() -> str:
+    """Resolve uvx to an absolute path at install time. Claude Code spawns hooks
+    and MCP servers with a minimal PATH that may lack ~/.local/bin, so a bare
+    "uvx" fails to resolve under CC even though it works in an interactive shell.
+    Fall back to bare "uvx" only when unresolvable (no worse than before)."""
+    return shutil.which("uvx") or "uvx"
+
+
 def _block(command: str) -> dict:
     return {"//": MARKER, "hooks": [{"type": "command", "command": command}]}
 
 
-_START = "uvx qhaway session-start"
-_END = "uvx qhaway session-end"
+def _start_cmd() -> str:
+    return f"{_uvx()} qhaway session-start"
 
-# serve derives its memory dir from CLAUDE_PROJECT_DIR — no hardcoded --dir.
-_MCP_SERVER = {"command": "uvx", "args": ["--python", "3.14", "qhaway", "serve"]}
+
+def _end_cmd() -> str:
+    return f"{_uvx()} qhaway session-end"
+
+
+def _mcp_server() -> dict:
+    # serve derives its memory dir from CLAUDE_PROJECT_DIR — no hardcoded --dir.
+    return {"command": _uvx(), "args": ["--python", "3.14", "qhaway", "serve"]}
 
 
 def _hooks_installed(settings: dict) -> bool:
@@ -86,15 +101,15 @@ def install(settings_path: Path, mcp_config_path: Path | None = None) -> str:
     settings = _load(settings_path)
     if not _hooks_installed(settings):
         hooks = settings.setdefault("hooks", {})
-        hooks.setdefault("SessionStart", []).append(_block(_START))
-        hooks.setdefault("SessionEnd", []).append(_block(_END))
+        hooks.setdefault("SessionStart", []).append(_block(_start_cmd()))
+        hooks.setdefault("SessionEnd", []).append(_block(_end_cmd()))
         _atomic_write(settings_path, settings)
         did_work = True
 
     if mcp_config_path is not None:
         mcp_config = _load(mcp_config_path)
         if not _mcp_installed(mcp_config):
-            mcp_config.setdefault("mcpServers", {})[MCP_NAME] = dict(_MCP_SERVER)
+            mcp_config.setdefault("mcpServers", {})[MCP_NAME] = _mcp_server()
             _atomic_write(mcp_config_path, mcp_config)
             did_work = True
 
