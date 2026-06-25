@@ -9,6 +9,7 @@ from pathlib import Path
 
 from qhaway import model, parse, paths, project, server
 from qhaway import reconcile as reconcile_mod
+from qhaway import setup as setup_mod
 from qhaway.reconcile import reconcile
 
 MEMORY_NAME = "MEMORY.md"
@@ -29,11 +30,16 @@ def main(args: list[str] | None = None) -> int:
         p.add_argument("--emit", action="store_true")
     sub.add_parser("session-start")
     sub.add_parser("session-end")
+    sub.add_parser("init")
+    sub.add_parser("uninstall")
 
     ns = parser.parse_args(args)
 
     if ns.command in ("session-start", "session-end"):
         return _session(ns.command)
+
+    if ns.command in ("init", "uninstall"):
+        return _setup_cmd(ns.command)
 
     directory = _resolve_dir(ns)
 
@@ -64,6 +70,27 @@ def main(args: list[str] | None = None) -> int:
             sys.stdout.write(project.project_slice(conn, budget=ns.budget))
         finally:
             conn.close()
+    return 0
+
+
+def _setup_cmd(which: str) -> int:
+    settings_path = Path.home() / ".claude" / "settings.json"
+    if which == "init":
+        result = setup_mod.install(settings_path)
+        if result == "already":
+            sys.stdout.write("qhaway: already installed, nothing to do.\n")
+        else:
+            sys.stdout.write(
+                "qhaway: installed. It activates in any project that has memory;\n"
+                "        projects without memory are untouched.\n"
+                "        Remove with: uvx qhaway uninstall\n"
+            )
+        return 0
+    result = setup_mod.uninstall(settings_path)
+    if result == "absent":
+        sys.stdout.write("qhaway: not installed, nothing to do.\n")
+    else:
+        sys.stdout.write("qhaway: removed. Your MEMORY.md files are left in place.\n")
     return 0
 
 
