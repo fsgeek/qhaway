@@ -47,14 +47,44 @@ claims and guaranteed under budget. Nothing downstream changes.
 
 ## Install
 
+The easiest way to run qhaway is as a **Claude Code plugin**. While enabled, it
+delivers your memory at every session start and leaves a current, signed index
+when the session ends — automatically, no commands to run.
+
+The only prerequisite is [`uv`](https://docs.astral.sh/uv/). You do not install
+qhaway, Python, or any dependencies yourself — the plugin invokes it with `uvx`,
+which fetches the published package and a managed Python into an isolated cache
+on first use.
+
+```sh
+# 1. one-time: have uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. clone, then point Claude Code at the plugin
+git clone https://github.com/fsgeek/qhaway
+claude --plugin-dir qhaway/qhaway-plugin
+#    the plugin ships disabled — enable it from /plugin to opt in
+```
+
+**Turning it off is just as easy.** Disable it from `/plugin` and the hooks stop
+firing; your `MEMORY.md` is left as a plain, readable, self-sufficient index —
+nothing broken, nothing to clean up. qhaway *borrows* the index file while
+enabled and *returns* a current honest one when it leaves. To remove every
+trace, `uv cache clean` purges the cached package; there is no persistent
+install to uninstall.
+
+### As a standalone CLI
+
+If you just want the index tool by hand (no Claude Code), install it directly:
+
 ```sh
 uv tool install qhaway
 # or
 pipx install qhaway
 ```
 
-Embedded and zero-infra: it uses stdlib SQLite (WAL mode) as a single local
-file. No server, no database to provision, no credentials.
+Embedded and zero-infra either way: it uses stdlib SQLite (WAL mode) as a single
+local file. No server, no database to provision, no credentials.
 
 ## Usage
 
