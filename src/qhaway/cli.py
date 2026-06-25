@@ -134,8 +134,15 @@ def _resolve_dir(ns, environ=None, home=None) -> str:
 
 
 def _serve(directory: str) -> int:
-    if not os.path.isdir(directory):
-        sys.stderr.write(f"memory directory is not readable: {directory}\n")
+    # A fresh project has no memory dir yet. serve must PROVISION it, not reject
+    # it — otherwise CC sees the process exit and reports a failed MCP connection,
+    # and the first remember() could never create the first memory. Create the
+    # dir (parents included) so the server starts ready to write. A genuinely
+    # unwritable path still fails — cleanly, to stderr, never to stdout (G-5).
+    try:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        sys.stderr.write(f"cannot create memory directory {directory}: {exc}\n")
         return 1
     server.run(directory)
     return 0
