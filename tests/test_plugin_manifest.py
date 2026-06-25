@@ -18,11 +18,14 @@ def test_hooks_register_sessionstart_and_sessionend():
     assert "reconcile" in flat and "--emit" in flat  # start delivers
     assert "exit" in flat                              # end writes index
     assert "${CLAUDE_PROJECT_DIR}" in flat             # per-project memory dir
+    assert "uvx" in flat                               # resolved via uvx
+    assert "--python" in flat and "3.14" in flat       # pinned interpreter
 
 
 def test_mcp_json_registers_server():
     j = json.loads((ROOT / ".mcp.json").read_text())
     server = j["mcpServers"]["qhaway"]
-    assert server["command"] == "${CLAUDE_PLUGIN_ROOT}/bin/qhaway"
-    assert "serve" in server["args"]
-    assert "${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory" in server["args"]
+    assert server["command"] == "uvx"
+    args = server["args"]
+    assert args[:4] == ["--python", "3.14", "qhaway", "serve"]
+    assert "${CLAUDE_PROJECT_DIR}/.claude/qhaway-memory" in args
