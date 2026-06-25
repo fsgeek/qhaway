@@ -74,19 +74,23 @@ def main(args: list[str] | None = None) -> int:
 
 
 def _setup_cmd(which: str) -> int:
-    settings_path = Path.home() / ".claude" / "settings.json"
+    home = Path.home()
+    settings_path = home / ".claude" / "settings.json"  # hooks (PUSH)
+    mcp_config_path = home / ".claude.json"             # MCP server (PULL)
     if which == "init":
-        result = setup_mod.install(settings_path)
+        result = setup_mod.install(settings_path, mcp_config_path=mcp_config_path)
         if result == "already":
             sys.stdout.write("qhaway: already installed, nothing to do.\n")
         else:
             sys.stdout.write(
-                "qhaway: installed. It activates in any project that has memory;\n"
+                "qhaway: installed (boot hooks + recall/remember MCP server).\n"
+                "        It activates in any project that has memory;\n"
                 "        projects without memory are untouched.\n"
+                "        Restart Claude Code for the MCP server to load.\n"
                 "        Remove with: uvx qhaway uninstall\n"
             )
         return 0
-    result = setup_mod.uninstall(settings_path)
+    result = setup_mod.uninstall(settings_path, mcp_config_path=mcp_config_path)
     if result == "absent":
         sys.stdout.write("qhaway: not installed, nothing to do.\n")
     else:
