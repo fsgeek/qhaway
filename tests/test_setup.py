@@ -56,3 +56,14 @@ def test_uninstall_when_absent(tmp_path):
     s = tmp_path / "settings.json"
     s.write_text(json.dumps({"theme": "dark"}))
     assert setup.uninstall(s) == "absent"
+
+
+import pytest
+
+
+def test_install_on_malformed_settings_raises_and_preserves(tmp_path):
+    s = tmp_path / "settings.json"
+    s.write_text("{ not valid json ")
+    with pytest.raises(ValueError):
+        setup.install(s)
+    assert s.read_text() == "{ not valid json "  # untouched
