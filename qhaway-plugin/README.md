@@ -18,6 +18,11 @@ you install uv.
 
 ## Install
 
+> **Recommended:** for most users, `uvx qhaway init` is the simpler path — it
+> wires qhaway into Claude Code at user scope (no clone, no per-session flag) and
+> activates in any project that has memory. This plugin is the per-session,
+> load-from-a-checkout alternative.
+
 You don't install the plugin to a location — you point Claude Code at the
 directory where it already lives. Clone the repo, then launch with
 `--plugin-dir`:
@@ -41,8 +46,12 @@ To turn it off, disable it from `/plugin` — the hooks stop firing and your
 Every entry point runs through the same invocation:
 
 ```
-uvx --python 3.14 qhaway <subcommand> --dir <project>/.claude/qhaway-memory
+uvx --python 3.14 qhaway <subcommand>
 ```
+
+Each entry point derives its memory dir from `CLAUDE_PROJECT_DIR` at runtime, so
+`serve`, `reconcile`, and `exit` always agree on one directory with no hardcoded
+path to go stale.
 
 uvx owns interpreter and dependency resolution, so all three entry points
 (`serve`, `reconcile`, `exit`) agree on one environment with no machine-specific

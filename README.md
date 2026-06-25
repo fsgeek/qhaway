@@ -47,31 +47,31 @@ claims and guaranteed under budget. Nothing downstream changes.
 
 ## Install
 
-The easiest way to run qhaway is as a **Claude Code plugin**. While enabled, it
-delivers your memory at every session start and leaves a current, signed index
-when the session ends — automatically, no commands to run.
+```sh
+uvx qhaway init
+```
 
-The only prerequisite is [`uv`](https://docs.astral.sh/uv/). You do not install
-qhaway, Python, or any dependencies yourself — the plugin invokes it with `uvx`,
-which fetches the published package and a managed Python into an isolated cache
-on first use.
+That's it. qhaway wires itself into Claude Code at user scope and activates in
+any project that already has memory; projects without memory are untouched. No
+clone, no per-project setup. To remove it: `uvx qhaway uninstall` (your
+`MEMORY.md` files are left in place).
+
+(Requires [`uv`](https://docs.astral.sh/uv/) — `uvx` fetches qhaway and a
+managed Python on first use.)
+
+### As a Claude Code plugin
+
+If you'd rather load qhaway per-session from a checkout instead of installing it
+at user scope, point Claude Code at the bundled plugin:
 
 ```sh
-# 1. one-time: have uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. clone, then point Claude Code at the plugin
 git clone https://github.com/fsgeek/qhaway
 claude --plugin-dir qhaway/qhaway-plugin
 #    the plugin ships disabled — enable it from /plugin to opt in
 ```
 
-**Turning it off is just as easy.** Disable it from `/plugin` and the hooks stop
-firing; your `MEMORY.md` is left as a plain, readable, self-sufficient index —
-nothing broken, nothing to clean up. qhaway *borrows* the index file while
-enabled and *returns* a current honest one when it leaves. To remove every
-trace, `uv cache clean` purges the cached package; there is no persistent
-install to uninstall.
+Disable it from `/plugin` and the hooks stop firing; your `MEMORY.md` is left as
+a plain, readable, self-sufficient index — nothing broken, nothing to clean up.
 
 ### As a standalone CLI
 
