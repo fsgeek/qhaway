@@ -67,3 +67,69 @@ def test_install_on_malformed_settings_raises_and_preserves(tmp_path):
     with pytest.raises(ValueError):
         setup.install(s)
     assert s.read_text() == "{ not valid json "  # untouched
+
+
+# --- MCP server registration (the second half of a complete install) ---
+
+
+def test_install_registers_mcp_server(tmp_path):
+    s = tmp_path / "settings.json"
+    m = tmp_path / ".claude.json"
+    setup.install(s, mcp_config_path=m)
+    d = _read(m)
+    assert "qhaway" in d["mcpServers"]
+    server = d["mcpServers"]["qhaway"]
+    assert server["command"] == "uvx"
+    assert "serve" in server["args"]
+    # no hardcoded --dir: serve derives the slug dir from CLAUDE_PROJECT_DIR
+    assert "--dir" not in server["args"]
+
+
+def test_mcp_install_preserves_other_servers_and_keys(tmp_path):
+    s = tmp_path / "settings.json"
+    m = tmp_path / ".claude.json"
+    m.write_text(json.dumps({
+        "mcpServers": {"serena": {"command": "serena-mcp"}},
+        "projects": {"/some/proj": {"history": ["x"]}},
+        "numStartups": 42,
+    }))
+    setup.install(s, mcp_config_path=m)
+    d = _read(m)
+    assert d["mcpServers"]["serena"] == {"command": "serena-mcp"}  # untouched
+    assert d["projects"] == {"/some/proj": {"history": ["x"]}}      # untouched
+    assert d["numStartups"] == 42                                  # untouched
+    assert "qhaway" in d["mcpServers"]                              # added
+
+
+def test_is_installed_requires_both_hooks_and_mcp(tmp_path):
+    s = tmp_path / "settings.json"
+    m = tmp_path / ".claude.json"
+    # hooks only (the shipped-0.1.2 state): NOT fully installed
+    setup.install(s)  # hooks-only, no mcp path
+    assert setup.is_installed(_read(s), _read(m) if m.exists() else {}) is False
+    # now add mcp: fully installed
+    setup.install(s, mcp_config_path=m)
+    assert setup.is_installed(_read(s), _read(m)) is True
+
+
+def test_install_completes_mcp_when_hooks_already_present(tmp_path):
+    # The real-machine case: hooks installed by 0.1.2, mcp missing.
+    # Re-running init must COMPLETE the mcp half, not no-op.
+    s = tmp_path / "settings.json"
+    m = tmp_path / ".claude.json"
+    setup.install(s)                          # hooks only (simulates 0.1.2)
+    assert "qhaway" not in _read(m).get("mcpServers", {}) if m.exists() else True
+    result = setup.install(s, mcp_config_path=m)
+    assert result == "installed"              # did work, not "already"
+    assert "qhaway" in _read(m)["mcpServers"]
+
+
+def test_uninstall_removes_mcp_server_too(tmp_path):
+    s = tmp_path / "settings.json"
+    m = tmp_path / ".claude.json"
+    m.write_text(json.dumps({"mcpServers": {"serena": {"command": "x"}}}))
+    setup.install(s, mcp_config_path=m)
+    assert setup.uninstall(s, mcp_config_path=m) == "removed"
+    d = _read(m)
+    assert "qhaway" not in d["mcpServers"]
+    assert d["mcpServers"]["serena"] == {"command": "x"}  # other server kept
