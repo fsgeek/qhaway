@@ -1271,16 +1271,19 @@ def test_cli_mcp_failures_structured(temp_memory_dir):
 
 def test_cli_server_stderr_safety(temp_memory_dir):
     """
-    G-5: Server discovery or startup failures route only to stderr, leaving stdout clean.
+    G-5: Server startup failures route only to stderr, leaving stdout clean.
+
+    serve PROVISIONS a missing-but-writable memory dir (a fresh project must be
+    able to start its server), so an UNWRITABLE path is what still fails — and
+    that failure must stay on stderr with zero protocol frames on stdout.
     """
     check_modules_loaded()
-    
-    # Start server CLI on an empty/nonexistent path to trigger directory discovery failure
-    # Ensure stdout remains completely clean (zero protocol frames) while stderr carries failure log.
-    res = run_qhaway_cli(["serve", "--dir", "/nonexistent/path/here"])
+
+    # /proc is real but cannot host a new subdir → mkdir fails → clean startup error.
+    res = run_qhaway_cli(["serve", "--dir", "/proc/qhaway-cannot-create/memory"])
     assert res.returncode != 0
-    assert len(res.stdout.strip()) == 0
-    assert "memory directory is not readable" in res.stderr
+    assert len(res.stdout.strip()) == 0  # stdout clean — no protocol garbage
+    assert "cannot create memory directory" in res.stderr
 
 
 def test_unit_rebuild_on_drift_bounded(temp_memory_dir):
