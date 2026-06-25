@@ -27,8 +27,14 @@ def main(args: list[str] | None = None) -> int:
         p.add_argument("--dry-run", action="store_true")
         p.add_argument("--check", action="store_true")  # deprecated alias on index
         p.add_argument("--emit", action="store_true")
+    sub.add_parser("session-start")
+    sub.add_parser("session-end")
 
     ns = parser.parse_args(args)
+
+    if ns.command in ("session-start", "session-end"):
+        return _session(ns.command)
+
     directory = _resolve_dir(ns)
 
     if ns.command == "serve":
@@ -59,6 +65,26 @@ def main(args: list[str] | None = None) -> int:
         finally:
             conn.close()
     return 0
+
+
+def _session(which: str) -> int:
+    """Self-gating SessionStart/SessionEnd entry. Derives the per-project memory
+    dir from CLAUDE_PROJECT_DIR and no-ops cleanly when the project has no memory
+    (no var, or dir without topic files). One user-scope install thus serves all
+    projects without firing where there is nothing to do."""
+    memory_dir = paths.derive_from_env(os.environ)
+    if memory_dir is None or not paths.has_memory(memory_dir):
+        return 0  # dormant — touch nothing
+    directory = str(memory_dir)
+    if which == "session-start":
+        reconcile(directory)
+        conn = model.get_connection(directory)
+        try:
+            sys.stdout.write(project.project_slice(conn, budget=project.DEFAULT_BUDGET))
+        finally:
+            conn.close()
+        return 0
+    return _exit(directory, project.DEFAULT_BUDGET)
 
 
 def _resolve_dir(ns, environ=None, home=None) -> str:
