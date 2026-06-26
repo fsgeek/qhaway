@@ -48,13 +48,14 @@ claims and guaranteed under budget. Nothing downstream changes.
 ## Install
 
 ```sh
-uvx qhaway init
+uvx qhaway init        # `uvx qhaway install` works too
 ```
 
-That's it. qhaway wires itself into Claude Code at user scope and activates in
-any project that already has memory; projects without memory are untouched. No
-clone, no per-project setup. To remove it: `uvx qhaway uninstall` (your
-`MEMORY.md` files are left in place).
+Then **restart Claude Code.** qhaway wires itself in at user scope — both the
+boot hooks (which deliver your memory at session start) and the `recall` /
+`remember` MCP tools — and activates in any project that already has memory;
+projects without memory are untouched. No clone, no per-project setup. To remove
+it: `uvx qhaway uninstall` (your `MEMORY.md` files are left in place).
 
 (Requires [`uv`](https://docs.astral.sh/uv/) — `uvx` fetches qhaway and a
 managed Python on first use.)
@@ -113,20 +114,10 @@ below) but won't survive into the index unless it lives in a topic file.
 
 ## MCP spine (remember / recall)
 
-The spine lets a Claude Code instance reach its memory through MCP tools instead
-of hand-writing files. `MEMORY.md` becomes a managed, read-only **redirect** into
-the SQLite-derived index; the topic files stay the source of truth.
-
-```sh
-# Run the MCP server over a memory directory (reconciles once at startup)
-qhaway serve --dir <memory_dir>
-
-# Sync the index from the files (alias: qhaway index)
-qhaway reconcile --dir <memory_dir>
-
-# Inspect: broken wikilinks, orphan backups, low topic count, would-overflow
-qhaway check --dir <memory_dir>
-```
+After `init` and a restart, a Claude Code instance reaches its memory through two
+MCP tools instead of hand-writing files. `MEMORY.md` becomes a managed,
+read-only **redirect** into the SQLite-derived index; the topic files stay the
+source of truth.
 
 Two verbs are exposed to the model:
 
@@ -134,6 +125,12 @@ Two verbs are exposed to the model:
   (omit args for the working set).
 - `remember(type, title, body, description?, links?)` — writes a topic file then
   reconciles. Files stay truth; the DB is a derived, rebuildable view.
+
+You don't run the server yourself — `init` wires it. Under the hood the MCP
+server derives its memory directory from `CLAUDE_PROJECT_DIR` and provisions it
+on first use, so a brand-new project starts ready for its first `remember()`.
+(The internal commands — `qhaway serve`, `qhaway reconcile`, `qhaway check` —
+exist for debugging; a normal install never invokes them by hand.)
 
 `MEMORY.md` is written born-read-only (`0o444`) as a friction signal — not a hard
 barrier — so the reflexive hand-edit is deflected toward the tools. qhaway's own
@@ -177,5 +174,5 @@ feeling the same sprawl, it spreads. Propagation is the measurement.
 
 ## Status
 
-Early (`v0.1.0`). The design is specified in
+Early (`v0.1.6`). The design is specified in
 [`docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md`](docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md).
