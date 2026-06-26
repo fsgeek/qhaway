@@ -30,7 +30,7 @@ def main(args: list[str] | None = None) -> int:
         p.add_argument("--emit", action="store_true")
     sub.add_parser("session-start")
     sub.add_parser("session-end")
-    sub.add_parser("init")
+    sub.add_parser("init", aliases=["install"])  # install/uninstall is the pair users reach for
     sub.add_parser("uninstall")
 
     ns = parser.parse_args(args)
@@ -38,7 +38,7 @@ def main(args: list[str] | None = None) -> int:
     if ns.command in ("session-start", "session-end"):
         return _session(ns.command)
 
-    if ns.command in ("init", "uninstall"):
+    if ns.command in ("init", "install", "uninstall"):
         return _setup_cmd(ns.command)
 
     directory = _resolve_dir(ns)
@@ -77,7 +77,7 @@ def _setup_cmd(which: str) -> int:
     home = Path.home()
     settings_path = home / ".claude" / "settings.json"  # hooks (PUSH)
     mcp_config_path = home / ".claude.json"             # MCP server (PULL)
-    if which == "init":
+    if which in ("init", "install"):
         result = setup_mod.install(settings_path, mcp_config_path=mcp_config_path)
         if result == "already":
             sys.stdout.write("qhaway: already installed, nothing to do.\n")
