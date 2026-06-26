@@ -3,4 +3,4 @@
 See the design spec: docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md
 """
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
