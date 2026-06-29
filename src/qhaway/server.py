@@ -64,7 +64,14 @@ def _exclusive_write(root: Path, stem: str, text: str) -> str:
     )
 
 
-def recall(type=None, role=None, status="live", memory_dir=".") -> str:
+def recall(type=None, role=None, status="live", memory_dir=".", reground=None) -> str:
+    """Project the memory slice; if `reground` is injected, re-ground any claim.
+
+    `reground` is an optional callable taking a claim dict and returning a live
+    rendered string (yanantin supplies it; qhaway never imports the DB layer —
+    dependency inversion, see 2026-06-28-claim-regrounding-at-recall-design.md).
+    Without it, or absent any claim, the projection is byte-identical to before.
+    """
     root = Path(memory_dir)
     if not root.is_dir():
         raise FileNotFoundError(f"memory directory is not readable: {memory_dir}")
@@ -73,11 +80,33 @@ def recall(type=None, role=None, status="live", memory_dir=".") -> str:
         result = project.project_slice_with_overflow(
             conn, budget=project.DEFAULT_BUDGET, content_type=type, role=role, status=status
         )
+        claims = _claim_nodes(conn, status) if reground is not None else []
     finally:
         conn.close()
+    markdown = result.markdown
+    if claims:
+        markdown = markdown.rstrip() + "\n\n" + _render_regroundings(claims, reground) + "\n"
     _emit(root, {"verb": "recall", "type": type, "role": role, "status": status,
-                 "result_chars": len(result.markdown)})
-    return result.markdown
+                 "result_chars": len(markdown)})
+    return markdown
+
+
+def _claim_nodes(conn, status) -> list[dict]:
+    """Nodes carrying a structured claim, in the requested status."""
+    return [
+        node for node in model.fetch_nodes(conn)
+        if node.get("claim") and (node.get("status") or "live") == status
+    ]
+
+
+def _render_regroundings(claims: list[dict], reground) -> str:
+    """One re-grounded line per claim-bearing memory — staleness made legible at
+    recall. The frozen value lives in the body; reground returns the live one."""
+    lines = ["## Re-grounded claims"]
+    for node in claims:
+        live = reground(node["claim"])
+        lines.append(f"- [{node.get('name') or node['file']}]({node['file']}): {live}")
+    return "\n".join(lines)
 
 
 def initialize_server(memory_dir: str) -> None:

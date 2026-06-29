@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import re
 from pathlib import Path
 from typing import Any
@@ -39,10 +40,33 @@ def parse_memory_file(filepath: str) -> dict[str, Any]:
         "origin_session": origin_session,
         "date_hint": date_hint,
         "description": _string_or_none(metadata.get("description")),
+        "claim": _claim(metadata),
         "body": body,
         "links": [_normalize_link(match) for match in WIKILINK_RE.findall(body)],
         "parse_warning": parse_warning,
     }
+
+
+def _claim(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    """A structured, re-groundable claim — only a well-formed mapping survives.
+
+    The claim must be valid YAML (a dict) to be machine-checkable at all; a prose
+    or malformed claim is simply not a claim and is ignored (None). Open-schema:
+    extra frontmatter stays on disk; only a real claim block is surfaced.
+
+    YAML coerces bare dates (`as_of: 2026-06-28`) to date objects; we normalize
+    them to ISO strings so the claim round-trips through JSON and renders as text.
+    """
+    claim = metadata.get("claim")
+    if not isinstance(claim, dict):
+        return None
+    return {key: _json_safe(value) for key, value in claim.items()}
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        return value.isoformat()
+    return value
 
 
 def _split_frontmatter(text: str) -> tuple[dict[str, Any], str, str | None]:

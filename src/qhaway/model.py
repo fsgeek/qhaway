@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import sqlite3
 import sys
 import time
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from qhaway import parse
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DB_NAME = ".qhaway.db"
 LOCK_NAME = ".qhaway.db.reset.lock"
 _DB_SUFFIXES = ("", "-wal", "-shm")
@@ -28,7 +29,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     date_hint TEXT,
     body TEXT,
     mtime_ns INTEGER,
-    size INTEGER
+    size INTEGER,
+    claim TEXT
 )
 """
 
@@ -46,6 +48,7 @@ _CREATE_EDGE_INDEX = "CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges (dst_slu
 _NODE_COLUMNS = (
     "file", "name", "content_type", "description", "role",
     "status", "origin_session", "date_hint", "body", "mtime_ns", "size",
+    "claim",
 )
 
 
@@ -157,6 +160,7 @@ def upsert_file(conn: sqlite3.Connection, path: Path) -> None:
             node["file"], node["name"], node["content_type"], node.get("description"),
             node["role"], node["status"], node["origin_session"], node["date_hint"],
             node["body"], stat.st_mtime_ns, stat.st_size,
+            json.dumps(node["claim"]) if node.get("claim") else None,
         ],
     )
     for dst_slug in node["links"]:
@@ -174,7 +178,10 @@ def delete_node(conn: sqlite3.Connection, file_name: str) -> None:
 def fetch_nodes(conn: sqlite3.Connection) -> list[dict]:
     cursor = conn.execute(f"SELECT {', '.join(_NODE_COLUMNS)} FROM nodes")
     columns = [col[0] for col in cursor.description]
-    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    nodes = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    for node in nodes:
+        node["claim"] = json.loads(node["claim"]) if node.get("claim") else None
+    return nodes
 
 
 def rebuild_database(memory_dir: str) -> None:
