@@ -120,17 +120,23 @@ def initialize_server(memory_dir: str) -> None:
     cli.reconcile(memory_dir)
 
 
-def run(memory_dir: str) -> None:
-    """The blocking MCP event loop: expose remember/recall as live tools (stdio).
+def build_server(memory_dir: str):
+    """Construct the configured FastMCP server (tools bound, version surfaced)
+    WITHOUT running the blocking loop — the testable seam for the handshake.
 
-    Built per the handoff [[handoff-serve-is-the-last-stub]] — this is the last
-    limb. The verbs already exist above; this binds them to the memory dir and
-    runs the protocol loop a Claude Code session connects to.
+    FastMCP's constructor exposes no version pass-through, so set it on the
+    wrapped low-level server; this is the field a client reads as
+    serverInfo.version (otherwise the SDK's own version is misreported).
     """
+    from qhaway import __version__
     from mcp.server.fastmcp import FastMCP
 
-    initialize_server(memory_dir)
-    mcp = FastMCP("qhaway")
+    mcp = FastMCP(
+        "qhaway",
+        instructions=f"qhaway memory server v{__version__}. Call recall() first; "
+        "your context is stale and recall() is the latest word.",
+    )
+    mcp._mcp_server.version = __version__
 
     @mcp.tool()
     def recall(type=None, role=None, status="live") -> str:
@@ -148,7 +154,18 @@ def run(memory_dir: str) -> None:
         filename written."""
         return _remember_impl(type, title, body, description, links, supersedes, memory_dir)
 
-    mcp.run()
+    return mcp
+
+
+def run(memory_dir: str) -> None:
+    """The blocking MCP event loop: expose remember/recall as live tools (stdio).
+
+    Built per the handoff [[handoff-serve-is-the-last-stub]] — this is the last
+    limb. The verbs already exist above; this binds them to the memory dir and
+    runs the protocol loop a Claude Code session connects to.
+    """
+    initialize_server(memory_dir)
+    build_server(memory_dir).run()
 
 
 # Module-level aliases so the tool wrappers above call the real verbs without
