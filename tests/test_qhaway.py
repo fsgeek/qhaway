@@ -233,6 +233,57 @@ def test_unit_model_build_index(temp_memory_dir):
     conn.close()
 
 
+def test_unit_parse_supersedes_field(temp_memory_dir):
+    """parse surfaces a normalized `supersedes` slug list; absent key -> []."""
+    check_modules_loaded()
+
+    winner = create_topic_file(
+        temp_memory_dir,
+        "project_b.md",
+        "---\ntype: project\nname: Project B\nsupersedes: [[Project A]]\n---\nBody [[mention_c]]",
+    )
+    node = parse.parse_memory_file(str(winner))
+    assert node["supersedes"] == ["project-a"]
+    # A wikilink in the BODY is a REFERENCES link, not a supersedes target.
+    assert "mention_c" in node["links"]
+
+    plain = create_topic_file(
+        temp_memory_dir,
+        "project_d.md",
+        "---\ntype: project\nname: Project D\n---\nNo supersession here.",
+    )
+    assert parse.parse_memory_file(str(plain))["supersedes"] == []
+
+
+def test_unit_model_emits_supersedes_edge(temp_memory_dir):
+    """upsert emits kind='SUPERSEDES' edges; ordinary body links stay REFERENCES."""
+    check_modules_loaded()
+
+    create_topic_file(
+        temp_memory_dir,
+        "project_a.md",
+        "---\ntype: project\nname: Project A\n---\nOld.",
+    )
+    create_topic_file(
+        temp_memory_dir,
+        "project_b.md",
+        "---\ntype: project\nname: Project B\nsupersedes: project_a\n---\nNew, see [[project_a]].",
+    )
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        kinds = dict(
+            (kind, dst)
+            for dst, kind in conn.execute(
+                "SELECT dst_slug, kind FROM edges WHERE src_file = 'project_b.md'"
+            ).fetchall()
+        )
+        assert kinds.get("REFERENCES") == "project_a"  # body link, unchanged
+        assert kinds.get("SUPERSEDES") == "project_a"  # frontmatter declaration
+    finally:
+        conn.close()
+
+
 def test_unit_project_sort_tiebreak():
     """
     Unit Test: Verifies that when all recency sorting tiers tie,
@@ -289,6 +340,38 @@ def test_unit_project_sort_tiebreak():
     assert idx_a != -1 and idx_b != -1
     assert idx_a < idx_b
     conn.close()
+
+
+def test_unit_project_demotes_link_superseded(temp_memory_dir):
+    """
+    Class-B leak: a winner B declares `supersedes: [[A]]` in its OWN
+    frontmatter while A's own status stays "live". A live projection must
+    demote A (footer count, not body), exactly as a self-declared tombstone.
+    """
+    check_modules_loaded()
+
+    create_topic_file(
+        temp_memory_dir,
+        "project_a.md",
+        "---\ntype: project\nname: Project A\n---\nThe old conclusion.",
+    )
+    create_topic_file(
+        temp_memory_dir,
+        "project_b.md",
+        "---\ntype: project\nname: Project B\nsupersedes: [[project_a]]\n---\nThe new conclusion.",
+    )
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        output = project.project_slice(conn, budget=10_000, status="live")
+        # B is the live winner and must appear.
+        assert "project_b.md" in output
+        # A is link-superseded; it must NOT appear in the body...
+        assert "(project_a.md)" not in output
+        # ...and must be accounted for in the hidden-superseded footer.
+        assert "superseded memories hidden" in output
+    finally:
+        conn.close()
 
 
 def test_unit_reconcile_incremental_skip(temp_memory_dir):
