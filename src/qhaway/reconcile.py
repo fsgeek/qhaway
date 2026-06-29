@@ -102,12 +102,39 @@ def compose_frontmatter(type: str, title: str, description: str | None,
     return f"---\n{dumped}---\n"
 
 
+def _coerce_targets(raw: str | list[str]) -> list[str]:
+    """Turn an incoming supersedes/links value into a list of target strings.
+
+    The MCP boundary types these args as `str`, so a multi-target call arrives as
+    a stringified JSON array — `'["a","b"]'`. A single target arrives as a bare
+    string (`'a-slug'` or `'[[a]]'`). The Python API may pass a real list.
+
+    Intent detection, NOT a blanket try/except: only a value that looks like a
+    JSON array (`[` but not the `[[` of a wikilink) is parsed as JSON. If that
+    parse fails, the caller *meant* a list and malformed it — raise loudly rather
+    than fall back to [raw], which would silently fuse the targets into one slug
+    (the exact bug this fixes). Everything else is a single target.
+    """
+    if isinstance(raw, list):
+        return raw
+    text = raw.strip()
+    if text.startswith("[") and not text.startswith("[["):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"value looked like a JSON array but did not parse: {raw!r} ({exc})"
+            ) from exc
+        if not isinstance(parsed, list):
+            raise ValueError(f"expected a JSON array, got {type(parsed).__name__}: {raw!r}")
+        return parsed
+    return [raw]
+
+
 def _dedupe_normalized(values: str | list[str]) -> list[str]:
-    """Normalize each value via normalize_link, preserving order, dropping dups."""
-    if isinstance(values, str):
-        values = [values]
+    """Coerce to a target list, normalize via normalize_link, dedupe, keep order."""
     seen: dict[str, None] = {}
-    for value in values:
+    for value in _coerce_targets(values):
         seen.setdefault(normalize_link(value), None)
     return list(seen)
 
