@@ -613,6 +613,102 @@ def test_unit_remember_links_single_string_not_exploded(temp_memory_dir):
     assert node["links"] == ["serve-is-wired"]
 
 
+def test_unit_remember_writes_supersedes_edge(temp_memory_dir):
+    """remember(supersedes=...) writes a normalized supersedes: frontmatter key
+    on the winner and, after reconcile, a SUPERSEDES edge exists. Accepts the
+    same forms as links: [[Title]], bare slug, and list; a bare string is ONE
+    target, not one per character. Loser's file is never created/touched."""
+    check_modules_loaded()
+
+    filename = server.remember(
+        type="project",
+        title="Winner B",
+        body="The new conclusion.",
+        supersedes=["[[Loser A]]", "other-loser"],
+        memory_dir=str(temp_memory_dir),
+    )
+
+    node = parse.parse_memory_file(str(temp_memory_dir / filename))
+    # Frontmatter key round-trips through the parser, normalized.
+    assert sorted(node["supersedes"]) == ["loser-a", "other-loser"]
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        edges = {
+            (dst, kind)
+            for dst, kind in conn.execute(
+                "SELECT dst_slug, kind FROM edges WHERE src_file = ?", [filename]
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+    assert (("loser-a", "SUPERSEDES")) in edges
+    assert (("other-loser", "SUPERSEDES")) in edges
+
+
+def test_unit_remember_supersedes_single_string_not_exploded(temp_memory_dir):
+    """A bare-string supersedes arg is ONE target, not one per character
+    (the same string-is-iterable trap that bit links via the MCP boundary)."""
+    check_modules_loaded()
+
+    filename = server.remember(
+        type="project",
+        title="Winner C",
+        body="Body.",
+        supersedes="serve-is-wired",
+        memory_dir=str(temp_memory_dir),
+    )
+    node = parse.parse_memory_file(str(temp_memory_dir / filename))
+    assert node["supersedes"] == ["serve-is-wired"]
+
+
+def test_unit_remember_without_supersedes_writes_no_edge(temp_memory_dir):
+    """Absent param: no supersedes: key, no SUPERSEDES edge — no regression."""
+    check_modules_loaded()
+
+    filename = server.remember(
+        type="project",
+        title="Plain D",
+        body="No supersession.",
+        memory_dir=str(temp_memory_dir),
+    )
+    node = parse.parse_memory_file(str(temp_memory_dir / filename))
+    assert node["supersedes"] == []
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM edges WHERE kind = 'SUPERSEDES'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert count == 0
+
+
+def test_e2e_remember_supersedes_demotes_loser_at_recall(temp_memory_dir):
+    """The closed loop: remember A, then remember B superseding A, then recall.
+    B's remember-produced SUPERSEDES edge must make the 0.1.8 read-side demote A
+    — A absent from the live body, counted in the superseded footer."""
+    check_modules_loaded()
+
+    a_file = server.remember(
+        type="project", title="Old Conclusion A",
+        body="The original finding.", memory_dir=str(temp_memory_dir),
+    )
+    server.remember(
+        type="project", title="New Conclusion B",
+        body="The corrected finding.",
+        supersedes=f"[[{a_file[:-3]}]]",  # supersede A by its slug
+        memory_dir=str(temp_memory_dir),
+    )
+
+    out = server.recall(memory_dir=str(temp_memory_dir))
+
+    assert "New Conclusion B" in out                  # winner shown
+    assert f"({a_file})" not in out                    # loser not in body
+    assert "superseded memories hidden" in out         # loser counted in footer
+
+
 def test_unit_reconcile_sqlite_fallback(temp_memory_dir):
     """
     G-2: Connection establishment fails loud (raises error) if WAL journal_mode is not supported.
@@ -881,6 +977,65 @@ def test_cli_stale_drift_reported_by_check(temp_memory_dir):
     full_output = res.stdout + res.stderr
     assert "leaky.md" in full_output
     assert "good_one.md" not in full_output.replace("good_one.md backups", "")
+
+
+def test_unit_edge_superseded_detector(temp_memory_dir):
+    """The PRECISE path: a live node that is the target of a SUPERSEDES edge is
+    drift, found by edge lookup (no prose guessing). A clean live node with no
+    edge and no marker is not flagged. Distinct from the prose-scrape path."""
+    check_modules_loaded()
+
+    # Winner B declares it supersedes A; A's own file stays live.
+    create_topic_file(
+        temp_memory_dir, "winner_b.md",
+        "---\ntype: project\nname: Winner B\nsupersedes: [[loser_a]]\n---\nNew.\n",
+    )
+    create_topic_file(
+        temp_memory_dir, "loser_a.md",
+        "---\ntype: project\nname: Loser A\n---\nOld conclusion, no prose marker.\n",
+    )
+    create_topic_file(
+        temp_memory_dir, "clean.md",
+        "---\ntype: project\nname: Clean\n---\nGenuinely live.\n",
+    )
+
+    cli.reconcile(str(temp_memory_dir))
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        edge_superseded = set(cli._edge_superseded(conn))
+        prose_drift = {f for f, _ in cli._stale_drift(conn)}
+    finally:
+        conn.close()
+
+    # Precise path flags the edge target, and only it.
+    assert edge_superseded == {"loser_a.md"}
+    # The edge target has NO prose marker, so the prose path must NOT claim it —
+    # proving the two detectors are independent and distinguishable.
+    assert prose_drift == set()
+
+
+def test_cli_edge_superseded_reported_by_check(temp_memory_dir):
+    """`qhaway check` surfaces edge-declared supersession of a live loser
+    (non-zero exit, names the loser), as its own block distinct from prose drift."""
+    check_modules_loaded()
+
+    create_topic_file(temp_memory_dir, "filler1.md", "---\ntype: project\nname: F1\n---\nActive.\n")
+    create_topic_file(temp_memory_dir, "filler2.md", "---\ntype: project\nname: F2\n---\nActive.\n")
+    create_topic_file(
+        temp_memory_dir, "new_b.md",
+        "---\ntype: project\nname: New B\nsupersedes: [[old_a]]\n---\nReplacement.\n",
+    )
+    create_topic_file(
+        temp_memory_dir, "old_a.md",
+        "---\ntype: project\nname: Old A\n---\nReplaced, file still live.\n",
+    )
+
+    cli.reconcile(str(temp_memory_dir))
+    res = run_qhaway_cli(["check", "--dir", str(temp_memory_dir)])
+
+    assert res.returncode != 0
+    full_output = res.stdout + res.stderr
+    assert "old_a.md" in full_output
 
 
 def test_cli_role_filtering(temp_memory_dir):
