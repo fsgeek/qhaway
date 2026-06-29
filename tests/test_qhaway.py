@@ -255,7 +255,8 @@ def test_unit_project_sort_tiebreak():
             date_hint TEXT,
             body TEXT,
             mtime_ns INTEGER,
-            size INTEGER
+            size INTEGER,
+            claim TEXT
         )
         """
     )
@@ -265,16 +266,16 @@ def test_unit_project_sort_tiebreak():
     conn.execute(
         """
         INSERT INTO nodes VALUES (
-            'file_b.md', 'Node B', 'project', 'Desc', 'proj', 'live', 
-            'session_1', '2026-06-20', 'Body', 1700000000000000000, 10
+            'file_b.md', 'Node B', 'project', 'Desc', 'proj', 'live',
+            'session_1', '2026-06-20', 'Body', 1700000000000000000, 10, NULL
         )
         """
     )
     conn.execute(
         """
         INSERT INTO nodes VALUES (
-            'file_a.md', 'Node A', 'project', 'Desc', 'proj', 'live', 
-            'session_1', '2026-06-20', 'Body', 1700000000000000000, 10
+            'file_a.md', 'Node A', 'project', 'Desc', 'proj', 'live',
+            'session_1', '2026-06-20', 'Body', 1700000000000000000, 10, NULL
         )
         """
     )
