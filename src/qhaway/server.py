@@ -32,14 +32,14 @@ def _emit(root: Path, event: dict) -> None:
         pass
 
 
-def remember(type, title, body, description=None, links=None, memory_dir=".") -> str:
+def remember(type, title, body, description=None, links=None, supersedes=None, memory_dir=".") -> str:
     if type not in VALID_TYPES:
         raise ValueError(f"invalid type {type!r}; must be one of {sorted(VALID_TYPES)}")
     root = Path(memory_dir)
     if not root.is_dir():
         raise FileNotFoundError(f"memory directory is not readable: {memory_dir}")
 
-    text = reconcile.compose_topic_file(type, title, body, description, links)
+    text = reconcile.compose_topic_file(type, title, body, description, links, supersedes)
     stem = reconcile.slugify(title)
     filename = _exclusive_write(root, stem, text)
     reconcile.reconcile(str(root))
@@ -140,10 +140,13 @@ def run(memory_dir: str) -> None:
         return _recall_impl(type, role, status, memory_dir)
 
     @mcp.tool()
-    def remember(type, title, body, description=None, links=None) -> str:
+    def remember(type, title, body, description=None, links=None, supersedes=None) -> str:
         """Write a memory to the structured store. `type` is one of
-        user/feedback/project/reference. Returns the topic filename written."""
-        return _remember_impl(type, title, body, description, links, memory_dir)
+        user/feedback/project/reference. When this memory replaces an earlier
+        one, pass `supersedes` (a slug, [[wikilink]], or list of them) naming the
+        memory it retires — recall will then demote the loser. Returns the topic
+        filename written."""
+        return _remember_impl(type, title, body, description, links, supersedes, memory_dir)
 
     mcp.run()
 

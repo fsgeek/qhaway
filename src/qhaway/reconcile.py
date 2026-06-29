@@ -87,25 +87,37 @@ def normalize_link(raw: str) -> str:
     return slugify(text)
 
 
-def compose_frontmatter(type: str, title: str, description: str | None) -> str:
+def compose_frontmatter(type: str, title: str, description: str | None,
+                        supersedes: list[str] | None = None) -> str:
     data = {"name": title, "type": type}
     if description is not None:
         data["description"] = description
+    if supersedes:
+        # Stored as [[wikilink]] strings so the on-disk key reads naturally and
+        # round-trips through parse._supersedes (which accepts [[A]] or bare).
+        data["supersedes"] = [f"[[{slug}]]" for slug in supersedes]
     dumped = yaml.safe_dump(
         data, allow_unicode=True, sort_keys=False, default_flow_style=False
     )
     return f"---\n{dumped}---\n"
 
 
-def compose_topic_file(type, title, body, description, links) -> str:
-    text = compose_frontmatter(type, title, description) + body
-    if isinstance(links, str):
-        links = [links]
+def _dedupe_normalized(values: str | list[str]) -> list[str]:
+    """Normalize each value via normalize_link, preserving order, dropping dups."""
+    if isinstance(values, str):
+        values = [values]
+    seen: dict[str, None] = {}
+    for value in values:
+        seen.setdefault(normalize_link(value), None)
+    return list(seen)
+
+
+def compose_topic_file(type, title, body, description, links, supersedes=None) -> str:
+    normalized_supersedes = _dedupe_normalized(supersedes) if supersedes else None
+    text = compose_frontmatter(type, title, description, normalized_supersedes) + body
     if links:
-        seen: dict[str, None] = {}
-        for link in links:
-            seen.setdefault(normalize_link(link), None)
-        text = text.rstrip() + "\n\n" + "\n".join(f"[[{slug}]]" for slug in seen) + "\n"
+        slugs = _dedupe_normalized(links)
+        text = text.rstrip() + "\n\n" + "\n".join(f"[[{slug}]]" for slug in slugs) + "\n"
     return text
 
 
