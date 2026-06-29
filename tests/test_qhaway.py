@@ -646,6 +646,62 @@ def test_unit_remember_writes_supersedes_edge(temp_memory_dir):
     assert (("other-loser", "SUPERSEDES")) in edges
 
 
+def test_unit_remember_supersedes_json_array_string_multi_target(temp_memory_dir):
+    """The MCP boundary types `supersedes` as str, so a multi-target call arrives
+    as a stringified JSON array — `'["a","b"]'`. It must yield TWO SUPERSEDES
+    edges to two distinct real targets, not one fused mega-slug. This drives the
+    STRING path the MCP caller actually uses (the Python-list path is covered
+    separately and never exercised this boundary)."""
+    check_modules_loaded()
+
+    filename = server.remember(
+        type="project",
+        title="JSON Array Winner",
+        body="Supersedes two at once.",
+        supersedes='["loser-one", "loser-two"]',
+        memory_dir=str(temp_memory_dir),
+    )
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        targets = {
+            dst
+            for dst, in conn.execute(
+                "SELECT dst_slug FROM edges WHERE src_file = ? AND kind = 'SUPERSEDES'",
+                [filename],
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+    assert targets == {"loser-one", "loser-two"}
+
+
+def test_unit_coerce_targets_branches():
+    """_coerce_targets: every intent branch, including the loud-raise path that
+    prevents silent fusion (the bug). A malformed JSON array must RAISE, not
+    fall back to a single fused value."""
+    check_modules_loaded()
+
+    # JSON array string (the MCP multi-target shape) -> list.
+    assert reconcile._coerce_targets('["a", "b"]') == ["a", "b"]
+    # Bare slug -> single target.
+    assert reconcile._coerce_targets("a-slug") == ["a-slug"]
+    # A wikilink starts with '[' but is NOT JSON -> single target, never parsed.
+    assert reconcile._coerce_targets("[[a]]") == ["[[a]]"]
+    # The punctuation blob that caused the live bug: looks list-ish, isn't JSON,
+    # isn't a single '[[' -> falls to single value (NOT a crash, NOT a fuse-parse).
+    assert reconcile._coerce_targets("[[a]], [[b]]") == ["[[a]], [[b]]"]
+    # A real Python list passes through.
+    assert reconcile._coerce_targets(["a", "b"]) == ["a", "b"]
+    # Malformed JSON ARRAY (starts with '[', caller MEANT a list, got it wrong)
+    # -> raise loud, never silently fall back to [raw] and fuse.
+    with pytest.raises(ValueError):
+        reconcile._coerce_targets('["a", "b"')
+    # A '{...}' object does NOT signal array-intent (the contract keys on '[' not
+    # '[['), so it is a single value, not a parse target. Garbage-in, not a crash.
+    assert reconcile._coerce_targets('{"a": 1}') == ['{"a": 1}']
+
+
 def test_unit_remember_supersedes_single_string_not_exploded(temp_memory_dir):
     """A bare-string supersedes arg is ONE target, not one per character
     (the same string-is-iterable trap that bit links via the MCP boundary)."""
