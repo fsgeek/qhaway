@@ -73,14 +73,26 @@ def get_connection(memory_dir: str) -> sqlite3.Connection:
 def _open_wal(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.execute("PRAGMA busy_timeout = 5000")
-    try:
-        mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
-    except sqlite3.OperationalError as exc:
-        conn.close()
-        raise RuntimeError(
-            "qhaway requires SQLite WAL mode, which this filesystem does not "
-            f"support (move the memory dir to local storage): {exc}"
-        ) from exc
+    # `PRAGMA journal_mode=WAL` switches the journal mode, which needs an
+    # exclusive lock that SQLite's busy handler does NOT cover — under the first
+    # concurrent open of a fresh DB it can raise `database is locked` outright
+    # even with busy_timeout set. WAL is a persistent file property, so that
+    # contention is transient: retry it at the application level rather than
+    # misreporting a transient lock as an unsupported filesystem.
+    deadline = time.monotonic() + 5.0
+    while True:
+        try:
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+            break
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower() and time.monotonic() < deadline:
+                time.sleep(0.01)
+                continue
+            conn.close()
+            raise RuntimeError(
+                "qhaway requires SQLite WAL mode, which this filesystem does not "
+                f"support (move the memory dir to local storage): {exc}"
+            ) from exc
     if mode is not None and str(mode[0]).lower() != "wal":
         conn.close()
         raise RuntimeError(
