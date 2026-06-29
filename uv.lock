@@ -515,20 +515,25 @@ wheels = [
 
 [[package]]
 name = "qhaway"
-version = "0.1.7"
+version = "0.1.8"
 source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
-    { name = "python-arango" },
     { name = "pyyaml" },
+]
+
+[package.optional-dependencies]
+reground = [
+    { name = "python-arango" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = ">=1.28.0" },
-    { name = "python-arango", specifier = ">=8.3.3" },
+    { name = "python-arango", marker = "extra == 'reground'", specifier = ">=8.3.3" },
     { name = "pyyaml" },
 ]
+provides-extras = ["reground"]
 
 [[package]]
 name = "referencing"
