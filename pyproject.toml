@@ -1,6 +1,6 @@
 [project]
 name = "qhaway"
-version = "0.2.0"
+version = "0.2.1"
 description = "A truncation-proof projection of a Markdown memory index: regenerate MEMORY.md to fit the loader's budget and declare what it sets aside, instead of being silently cut."
 readme = "README.md"
 requires-python = ">=3.14"
