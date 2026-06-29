@@ -127,8 +127,10 @@ def _schema_drifted(conn: sqlite3.Connection) -> bool:
     if version != SCHEMA_VERSION:
         return True
     # Defensive: version matches but columns are missing (hand-corrupted db).
+    # Check against the full declared column set so a stamped-but-incomplete db
+    # (e.g. v2 stamp, claim column never added) still rebuilds from disk.
     cols = {row[1] for row in conn.execute("PRAGMA table_info(nodes)")}
-    if not {"mtime_ns", "size"}.issubset(cols):
+    if not set(_NODE_COLUMNS).issubset(cols):
         return True
     return False
 

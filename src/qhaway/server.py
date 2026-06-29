@@ -80,7 +80,7 @@ def recall(type=None, role=None, status="live", memory_dir=".", reground=None) -
         result = project.project_slice_with_overflow(
             conn, budget=project.DEFAULT_BUDGET, content_type=type, role=role, status=status
         )
-        claims = _claim_nodes(conn, status) if reground is not None else []
+        claims = _claim_nodes(conn, type, role, status) if reground is not None else []
     finally:
         conn.close()
     markdown = result.markdown
@@ -91,11 +91,17 @@ def recall(type=None, role=None, status="live", memory_dir=".", reground=None) -
     return markdown
 
 
-def _claim_nodes(conn, status) -> list[dict]:
-    """Nodes carrying a structured claim, in the requested status."""
+def _claim_nodes(conn, content_type, role, status) -> list[dict]:
+    """Claim-bearing nodes within the SAME slice the projection shows — re-grounding
+    must respect the recall filter (type/role/status), not leak claims from
+    memories outside the projected set. Normalizes content_type/status the way the
+    projection does (project._normalize_row) so the two slices agree exactly."""
     return [
         node for node in model.fetch_nodes(conn)
-        if node.get("claim") and (node.get("status") or "live") == status
+        if node.get("claim")
+        and (node.get("status") or "live") == status
+        and (content_type is None or (node.get("content_type") or "project") == content_type)
+        and (role is None or node.get("role") == role)
     ]
 
 
