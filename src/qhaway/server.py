@@ -128,7 +128,7 @@ def build_server(memory_dir: str):
     wrapped low-level server; this is the field a client reads as
     serverInfo.version (otherwise the SDK's own version is misreported).
     """
-    from qhaway import __version__
+    from qhaway import __version__, reground as reground_mod
     from mcp.server.fastmcp import FastMCP
 
     mcp = FastMCP(
@@ -138,12 +138,17 @@ def build_server(memory_dir: str):
     )
     mcp._mcp_server.version = __version__
 
+    # Discover the re-ground provider once, at serve time. None on a base install
+    # (no [reground] extra) or a storeless box → recall stays byte-identical. With
+    # the extra + a db.ini present, claims re-ground live on the deployed path.
+    _reground = reground_mod.default_provider()
+
     @mcp.tool()
     def recall(type=None, role=None, status="live") -> str:
         """Read your memory: a budgeted projection of the structured store, not
         the whole file. Omit args for the working set; filter by `type`
         (user/feedback/project/reference), `role`, or `status`."""
-        return _recall_impl(type, role, status, memory_dir)
+        return _recall_impl(type, role, status, memory_dir, reground=_reground)
 
     @mcp.tool()
     def remember(type, title, body, description=None, links=None, supersedes=None) -> str:
