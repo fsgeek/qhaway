@@ -1,5 +1,7 @@
 # qhaway
 
+[![CI](https://github.com/fsgeek/qhaway/actions/workflows/ci.yml/badge.svg)](https://github.com/fsgeek/qhaway/actions/workflows/ci.yml)
+
 *Quechua: "to see / to watch over."* The name states the cure — make the whole
 memory record **visible** instead of silently truncated.
 
@@ -174,5 +176,11 @@ feeling the same sprawl, it spreads. Propagation is the measurement.
 
 ## Status
 
-Early (`v0.1.7`). The design is specified in
+Early (`v0.2.1`). The design is specified in
 [`docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md`](docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md).
+
+## Contributing
+
+Changes go through pull requests; `main` is protected and merges only when CI is
+green. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and the test-first,
+separate-commits conventions the project expects. Licensed [MIT](LICENSE).
