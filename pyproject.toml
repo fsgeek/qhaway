@@ -17,6 +17,11 @@ dependencies = [
     "pyyaml",
 ]
 
+[dependency-groups]
+# Dev-only tooling, not shipped with the package. CI installs this group to run
+# the suite deterministically (`uv sync --group dev`).
+dev = ["pytest>=9"]
+
 [project.optional-dependencies]
 # Live-store claim re-grounding against a yanantin ArangoDB. Optional because
 # it is the federation seam toward yanantin, not core qhaway: the base package
