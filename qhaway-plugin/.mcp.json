@@ -2,7 +2,7 @@
   "mcpServers": {
     "qhaway": {
       "command": "uvx",
-      "args": ["--python", "3.14", "qhaway", "serve"]
+      "args": ["--python", "3.14", "qhaway[reground]", "serve"]
     }
   }
 }
