@@ -14,9 +14,16 @@ classifiers = [
 ]
 dependencies = [
     "mcp[cli]>=1.28.0",
-    "python-arango>=8.3.3",
     "pyyaml",
 ]
+
+[project.optional-dependencies]
+# Live-store claim re-grounding against a yanantin ArangoDB. Optional because
+# it is the federation seam toward yanantin, not core qhaway: the base package
+# is the pure index/projection slice. Installing `qhaway[reground]` pulls the
+# driver used by the live re-grounding tests; the injected-callable contract
+# itself is tested without it.
+reground = ["python-arango>=8.3.3"]
 
 [project.scripts]
 qhaway = "qhaway.cli:main"
