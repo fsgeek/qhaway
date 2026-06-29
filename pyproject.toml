@@ -5,6 +5,7 @@ description = "A truncation-proof projection of a Markdown memory index: regener
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Tony", email = "fsgeek@cs.ubc.ca" }]
 keywords = ["memory", "index", "markdown", "llm", "agent", "sqlite", "mcp"]
 classifiers = [
