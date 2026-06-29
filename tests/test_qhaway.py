@@ -791,6 +791,48 @@ def test_unit_reconcile_sqlite_fallback(temp_memory_dir):
 
 
 
+def test_open_wal_retries_through_transient_lock(temp_memory_dir):
+    """
+    A transient `database is locked` while switching to WAL must be retried, not
+    misreported as an unsupported filesystem.
+
+    SQLite's busy_timeout handler does NOT cover `PRAGMA journal_mode=WAL` (the
+    journal-mode switch fails its exclusive-lock acquisition immediately instead
+    of invoking the busy handler). So under the first concurrent open of a fresh
+    DB the pragma can raise `database is locked` ~18% of the time even with
+    busy_timeout set. WAL is a persistent file property — once any connection
+    sets it the contention is gone — so this is transient and must be retried at
+    the application level, not surfaced as an unsupported-filesystem error.
+
+    Stub the pragma to raise the transient lock twice, then succeed: _open_wal
+    must retry through and return a WAL connection rather than raising.
+    """
+    check_modules_loaded()
+
+    db = model.db_path(temp_memory_dir)
+    remaining = {"locks": 2}
+
+    class FlakyConnection(sqlite3.Connection):
+        def execute(self, sql, *exec_args, **kwargs):
+            if "journal_mode=WAL" in sql and remaining["locks"] > 0:
+                remaining["locks"] -= 1
+                raise sqlite3.OperationalError("database is locked")
+            return super().execute(sql, *exec_args, **kwargs)
+
+    original_connect = sqlite3.connect
+
+    def mock_connect(*args, **kwargs):
+        kwargs["factory"] = FlakyConnection
+        return original_connect(*args, **kwargs)
+
+    with patch("sqlite3.connect", side_effect=mock_connect):
+        conn = model._open_wal(db)
+
+    assert remaining["locks"] == 0, "the transient locks should have been consumed by retries"
+    assert str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
+    conn.close()
+
+
 def test_unit_reconcile_schema_auto_rebuild(temp_memory_dir):
     """
     G-3: Verify automatic database schema rebuild if user_version is outdated or columns drift.
