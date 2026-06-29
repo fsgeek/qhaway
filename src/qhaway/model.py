@@ -170,6 +170,11 @@ def upsert_file(conn: sqlite3.Connection, path: Path) -> None:
             "INSERT OR IGNORE INTO edges (src_file, dst_slug, kind) VALUES (?, ?, 'REFERENCES')",
             [node["file"], dst_slug],
         )
+    for dst_slug in node.get("supersedes", []):
+        conn.execute(
+            "INSERT OR IGNORE INTO edges (src_file, dst_slug, kind) VALUES (?, ?, 'SUPERSEDES')",
+            [node["file"], dst_slug],
+        )
 
 
 def delete_node(conn: sqlite3.Connection, file_name: str) -> None:
