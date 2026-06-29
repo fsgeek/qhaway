@@ -43,8 +43,42 @@ def parse_memory_file(filepath: str) -> dict[str, Any]:
         "claim": _claim(metadata),
         "body": body,
         "links": [_normalize_link(match) for match in WIKILINK_RE.findall(body)],
+        "supersedes": _supersedes(metadata),
         "parse_warning": parse_warning,
     }
+
+
+def _supersedes(metadata: dict[str, Any]) -> list[str]:
+    """Slugs this node declares it supersedes, from a `supersedes:` frontmatter key.
+
+    Accepts a single value or a list; each entry may be a `[[wikilink]]` or a
+    bare slug, normalized the same way body links are so the read side matches.
+    """
+    slugs: list[str] = []
+    _collect_supersedes(metadata.get("supersedes"), slugs)
+    return slugs
+
+
+def _collect_supersedes(raw: Any, slugs: list[str]) -> None:
+    """Flatten a `supersedes:` value into normalized slugs.
+
+    YAML reads `supersedes: [[A]]` as a nested list, `supersedes: A` as a string,
+    and `supersedes: [a, b]` as a flat list — so recurse through lists and treat
+    any leaf string as either wikilink(s) or a bare slug.
+    """
+    if isinstance(raw, list):
+        for item in raw:
+            _collect_supersedes(item, slugs)
+        return
+    text = _string_or_none(raw)
+    if not text:
+        return
+    matched = False
+    for match in WIKILINK_RE.findall(text):
+        slugs.append(_normalize_link(match))
+        matched = True
+    if not matched:
+        slugs.append(_normalize_link(text))
 
 
 def _claim(metadata: dict[str, Any]) -> dict[str, Any] | None:

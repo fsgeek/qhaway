@@ -31,13 +31,14 @@ def _admin_db(db_name: str):
     ini = Path.home() / ".yanantin" / "config" / "db.ini"
     if not ini.exists():
         pytest.skip("no ~/.yanantin/config/db.ini — live store unavailable")
+    # `python-arango` is the optional `reground` extra, not a base dependency —
+    # skip the live-store tests cleanly on a base install rather than erroring.
+    ArangoClient = pytest.importorskip("arango").ArangoClient
     cfg = configparser.ConfigParser()
     cfg.read(ini)
     db = cfg["database"]
     scheme = "https" if db.get("ssl", "false") == "true" else "http"
     host = f"{scheme}://{db['host']}:{db['port']}"
-    from arango import ArangoClient
-
     client = ArangoClient(hosts=host)
     return client.db(db_name, username=db["admin_user"], password=db["admin_passwd"])
 

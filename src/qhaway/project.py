@@ -25,17 +25,22 @@ def project_slice(
     """Return a deterministic, budgeted Markdown projection."""
 
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
+    superseded_slugs = _superseded_slugs(db_conn)
     filtered = [
         row
         for row in rows
         if row["status"] == status
+        and not _is_link_superseded(row, superseded_slugs, status)
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
     ]
     hidden_superseded = [
         row
         for row in rows
-        if row["status"] == "superseded"
+        if (
+            row["status"] == "superseded"
+            or _is_link_superseded(row, superseded_slugs, status)
+        )
         and status == "live"
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
@@ -70,6 +75,33 @@ def project_slice(
         return output
 
     return _fit_footer_only(_actual_footer(filtered, hidden_superseded), budget)
+
+
+def _superseded_slugs(db_conn: Any) -> set[str]:
+    """Slugs that any node declares it supersedes (SUPERSEDES edge targets).
+
+    Tolerates a connection without an `edges` table (e.g. a hand-built
+    nodes-only test fixture): no edges table => no link-supersession.
+    """
+    try:
+        cursor = db_conn.execute(
+            "SELECT DISTINCT dst_slug FROM edges WHERE kind = 'SUPERSEDES'"
+        )
+    except Exception:
+        return set()
+    return {row[0] for row in cursor.fetchall()}
+
+
+def _is_link_superseded(row: dict[str, Any], superseded_slugs: set[str], status: str) -> bool:
+    """A live node is link-superseded if something points a SUPERSEDES edge at it.
+
+    Only demotes within a live slice — a node explicitly requested by
+    status=superseded is shown as asked, never re-hidden.
+    """
+    if status != "live":
+        return False
+    stem = str(row["file"]).removesuffix(".md")
+    return stem in superseded_slugs
 
 
 def _normalize_row(values: dict[str, Any]) -> dict[str, Any]:
@@ -264,10 +296,12 @@ def project_slice_with_overflow(
     """Render the slice AND return structured overflow counts (C-1/F-7)."""
     markdown = project_slice(db_conn, budget, content_type, role, status)
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
+    superseded_slugs = _superseded_slugs(db_conn)
     filtered = [
         row
         for row in rows
         if row["status"] == status
+        and not _is_link_superseded(row, superseded_slugs, status)
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
     ]
@@ -279,7 +313,10 @@ def project_slice_with_overflow(
     superseded_count = sum(
         1
         for row in rows
-        if row["status"] == "superseded"
+        if (
+            row["status"] == "superseded"
+            or _is_link_superseded(row, superseded_slugs, status)
+        )
         and status == "live"
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)

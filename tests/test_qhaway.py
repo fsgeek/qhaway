@@ -233,6 +233,57 @@ def test_unit_model_build_index(temp_memory_dir):
     conn.close()
 
 
+def test_unit_parse_supersedes_field(temp_memory_dir):
+    """parse surfaces a normalized `supersedes` slug list; absent key -> []."""
+    check_modules_loaded()
+
+    winner = create_topic_file(
+        temp_memory_dir,
+        "project_b.md",
+        "---\ntype: project\nname: Project B\nsupersedes: [[Project A]]\n---\nBody [[mention_c]]",
+    )
+    node = parse.parse_memory_file(str(winner))
+    assert node["supersedes"] == ["project-a"]
+    # A wikilink in the BODY is a REFERENCES link, not a supersedes target.
+    assert "mention_c" in node["links"]
+
+    plain = create_topic_file(
+        temp_memory_dir,
+        "project_d.md",
+        "---\ntype: project\nname: Project D\n---\nNo supersession here.",
+    )
+    assert parse.parse_memory_file(str(plain))["supersedes"] == []
+
+
+def test_unit_model_emits_supersedes_edge(temp_memory_dir):
+    """upsert emits kind='SUPERSEDES' edges; ordinary body links stay REFERENCES."""
+    check_modules_loaded()
+
+    create_topic_file(
+        temp_memory_dir,
+        "project_a.md",
+        "---\ntype: project\nname: Project A\n---\nOld.",
+    )
+    create_topic_file(
+        temp_memory_dir,
+        "project_b.md",
+        "---\ntype: project\nname: Project B\nsupersedes: project_a\n---\nNew, see [[project_a]].",
+    )
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        kinds = dict(
+            (kind, dst)
+            for dst, kind in conn.execute(
+                "SELECT dst_slug, kind FROM edges WHERE src_file = 'project_b.md'"
+            ).fetchall()
+        )
+        assert kinds.get("REFERENCES") == "project_a"  # body link, unchanged
+        assert kinds.get("SUPERSEDES") == "project_a"  # frontmatter declaration
+    finally:
+        conn.close()
+
+
 def test_unit_project_sort_tiebreak():
     """
     Unit Test: Verifies that when all recency sorting tiers tie,
@@ -289,6 +340,38 @@ def test_unit_project_sort_tiebreak():
     assert idx_a != -1 and idx_b != -1
     assert idx_a < idx_b
     conn.close()
+
+
+def test_unit_project_demotes_link_superseded(temp_memory_dir):
+    """
+    Class-B leak: a winner B declares `supersedes: [[A]]` in its OWN
+    frontmatter while A's own status stays "live". A live projection must
+    demote A (footer count, not body), exactly as a self-declared tombstone.
+    """
+    check_modules_loaded()
+
+    create_topic_file(
+        temp_memory_dir,
+        "project_a.md",
+        "---\ntype: project\nname: Project A\n---\nThe old conclusion.",
+    )
+    create_topic_file(
+        temp_memory_dir,
+        "project_b.md",
+        "---\ntype: project\nname: Project B\nsupersedes: [[project_a]]\n---\nThe new conclusion.",
+    )
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        output = project.project_slice(conn, budget=10_000, status="live")
+        # B is the live winner and must appear.
+        assert "project_b.md" in output
+        # A is link-superseded; it must NOT appear in the body...
+        assert "(project_a.md)" not in output
+        # ...and must be accounted for in the hidden-superseded footer.
+        assert "superseded memories hidden" in output
+    finally:
+        conn.close()
 
 
 def test_unit_reconcile_incremental_skip(temp_memory_dir):
@@ -530,6 +613,158 @@ def test_unit_remember_links_single_string_not_exploded(temp_memory_dir):
     assert node["links"] == ["serve-is-wired"]
 
 
+def test_unit_remember_writes_supersedes_edge(temp_memory_dir):
+    """remember(supersedes=...) writes a normalized supersedes: frontmatter key
+    on the winner and, after reconcile, a SUPERSEDES edge exists. Accepts the
+    same forms as links: [[Title]], bare slug, and list; a bare string is ONE
+    target, not one per character. Loser's file is never created/touched."""
+    check_modules_loaded()
+
+    filename = server.remember(
+        type="project",
+        title="Winner B",
+        body="The new conclusion.",
+        supersedes=["[[Loser A]]", "other-loser"],
+        memory_dir=str(temp_memory_dir),
+    )
+
+    node = parse.parse_memory_file(str(temp_memory_dir / filename))
+    # Frontmatter key round-trips through the parser, normalized.
+    assert sorted(node["supersedes"]) == ["loser-a", "other-loser"]
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        edges = {
+            (dst, kind)
+            for dst, kind in conn.execute(
+                "SELECT dst_slug, kind FROM edges WHERE src_file = ?", [filename]
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+    assert (("loser-a", "SUPERSEDES")) in edges
+    assert (("other-loser", "SUPERSEDES")) in edges
+
+
+def test_unit_remember_supersedes_json_array_string_multi_target(temp_memory_dir):
+    """The MCP boundary types `supersedes` as str, so a multi-target call arrives
+    as a stringified JSON array — `'["a","b"]'`. It must yield TWO SUPERSEDES
+    edges to two distinct real targets, not one fused mega-slug. This drives the
+    STRING path the MCP caller actually uses (the Python-list path is covered
+    separately and never exercised this boundary)."""
+    check_modules_loaded()
+
+    filename = server.remember(
+        type="project",
+        title="JSON Array Winner",
+        body="Supersedes two at once.",
+        supersedes='["loser-one", "loser-two"]',
+        memory_dir=str(temp_memory_dir),
+    )
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        targets = {
+            dst
+            for dst, in conn.execute(
+                "SELECT dst_slug FROM edges WHERE src_file = ? AND kind = 'SUPERSEDES'",
+                [filename],
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+    assert targets == {"loser-one", "loser-two"}
+
+
+def test_unit_coerce_targets_branches():
+    """_coerce_targets: every intent branch, including the loud-raise path that
+    prevents silent fusion (the bug). A malformed JSON array must RAISE, not
+    fall back to a single fused value."""
+    check_modules_loaded()
+
+    # JSON array string (the MCP multi-target shape) -> list.
+    assert reconcile._coerce_targets('["a", "b"]') == ["a", "b"]
+    # Bare slug -> single target.
+    assert reconcile._coerce_targets("a-slug") == ["a-slug"]
+    # A wikilink starts with '[' but is NOT JSON -> single target, never parsed.
+    assert reconcile._coerce_targets("[[a]]") == ["[[a]]"]
+    # The punctuation blob that caused the live bug: looks list-ish, isn't JSON,
+    # isn't a single '[[' -> falls to single value (NOT a crash, NOT a fuse-parse).
+    assert reconcile._coerce_targets("[[a]], [[b]]") == ["[[a]], [[b]]"]
+    # A real Python list passes through.
+    assert reconcile._coerce_targets(["a", "b"]) == ["a", "b"]
+    # Malformed JSON ARRAY (starts with '[', caller MEANT a list, got it wrong)
+    # -> raise loud, never silently fall back to [raw] and fuse.
+    with pytest.raises(ValueError):
+        reconcile._coerce_targets('["a", "b"')
+    # A '{...}' object does NOT signal array-intent (the contract keys on '[' not
+    # '[['), so it is a single value, not a parse target. Garbage-in, not a crash.
+    assert reconcile._coerce_targets('{"a": 1}') == ['{"a": 1}']
+
+
+def test_unit_remember_supersedes_single_string_not_exploded(temp_memory_dir):
+    """A bare-string supersedes arg is ONE target, not one per character
+    (the same string-is-iterable trap that bit links via the MCP boundary)."""
+    check_modules_loaded()
+
+    filename = server.remember(
+        type="project",
+        title="Winner C",
+        body="Body.",
+        supersedes="serve-is-wired",
+        memory_dir=str(temp_memory_dir),
+    )
+    node = parse.parse_memory_file(str(temp_memory_dir / filename))
+    assert node["supersedes"] == ["serve-is-wired"]
+
+
+def test_unit_remember_without_supersedes_writes_no_edge(temp_memory_dir):
+    """Absent param: no supersedes: key, no SUPERSEDES edge — no regression."""
+    check_modules_loaded()
+
+    filename = server.remember(
+        type="project",
+        title="Plain D",
+        body="No supersession.",
+        memory_dir=str(temp_memory_dir),
+    )
+    node = parse.parse_memory_file(str(temp_memory_dir / filename))
+    assert node["supersedes"] == []
+
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM edges WHERE kind = 'SUPERSEDES'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert count == 0
+
+
+def test_e2e_remember_supersedes_demotes_loser_at_recall(temp_memory_dir):
+    """The closed loop: remember A, then remember B superseding A, then recall.
+    B's remember-produced SUPERSEDES edge must make the 0.1.8 read-side demote A
+    — A absent from the live body, counted in the superseded footer."""
+    check_modules_loaded()
+
+    a_file = server.remember(
+        type="project", title="Old Conclusion A",
+        body="The original finding.", memory_dir=str(temp_memory_dir),
+    )
+    server.remember(
+        type="project", title="New Conclusion B",
+        body="The corrected finding.",
+        supersedes=f"[[{a_file[:-3]}]]",  # supersede A by its slug
+        memory_dir=str(temp_memory_dir),
+    )
+
+    out = server.recall(memory_dir=str(temp_memory_dir))
+
+    assert "New Conclusion B" in out                  # winner shown
+    assert f"({a_file})" not in out                    # loser not in body
+    assert "superseded memories hidden" in out         # loser counted in footer
+
+
 def test_unit_reconcile_sqlite_fallback(temp_memory_dir):
     """
     G-2: Connection establishment fails loud (raises error) if WAL journal_mode is not supported.
@@ -554,6 +789,48 @@ def test_unit_reconcile_sqlite_fallback(temp_memory_dir):
             model.get_connection(str(temp_memory_dir))
         assert "WAL" in str(excinfo.value)
 
+
+
+def test_open_wal_retries_through_transient_lock(temp_memory_dir):
+    """
+    A transient `database is locked` while switching to WAL must be retried, not
+    misreported as an unsupported filesystem.
+
+    SQLite's busy_timeout handler does NOT cover `PRAGMA journal_mode=WAL` (the
+    journal-mode switch fails its exclusive-lock acquisition immediately instead
+    of invoking the busy handler). So under the first concurrent open of a fresh
+    DB the pragma can raise `database is locked` ~18% of the time even with
+    busy_timeout set. WAL is a persistent file property — once any connection
+    sets it the contention is gone — so this is transient and must be retried at
+    the application level, not surfaced as an unsupported-filesystem error.
+
+    Stub the pragma to raise the transient lock twice, then succeed: _open_wal
+    must retry through and return a WAL connection rather than raising.
+    """
+    check_modules_loaded()
+
+    db = model.db_path(temp_memory_dir)
+    remaining = {"locks": 2}
+
+    class FlakyConnection(sqlite3.Connection):
+        def execute(self, sql, *exec_args, **kwargs):
+            if "journal_mode=WAL" in sql and remaining["locks"] > 0:
+                remaining["locks"] -= 1
+                raise sqlite3.OperationalError("database is locked")
+            return super().execute(sql, *exec_args, **kwargs)
+
+    original_connect = sqlite3.connect
+
+    def mock_connect(*args, **kwargs):
+        kwargs["factory"] = FlakyConnection
+        return original_connect(*args, **kwargs)
+
+    with patch("sqlite3.connect", side_effect=mock_connect):
+        conn = model._open_wal(db)
+
+    assert remaining["locks"] == 0, "the transient locks should have been consumed by retries"
+    assert str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
+    conn.close()
 
 
 def test_unit_reconcile_schema_auto_rebuild(temp_memory_dir):
@@ -798,6 +1075,65 @@ def test_cli_stale_drift_reported_by_check(temp_memory_dir):
     full_output = res.stdout + res.stderr
     assert "leaky.md" in full_output
     assert "good_one.md" not in full_output.replace("good_one.md backups", "")
+
+
+def test_unit_edge_superseded_detector(temp_memory_dir):
+    """The PRECISE path: a live node that is the target of a SUPERSEDES edge is
+    drift, found by edge lookup (no prose guessing). A clean live node with no
+    edge and no marker is not flagged. Distinct from the prose-scrape path."""
+    check_modules_loaded()
+
+    # Winner B declares it supersedes A; A's own file stays live.
+    create_topic_file(
+        temp_memory_dir, "winner_b.md",
+        "---\ntype: project\nname: Winner B\nsupersedes: [[loser_a]]\n---\nNew.\n",
+    )
+    create_topic_file(
+        temp_memory_dir, "loser_a.md",
+        "---\ntype: project\nname: Loser A\n---\nOld conclusion, no prose marker.\n",
+    )
+    create_topic_file(
+        temp_memory_dir, "clean.md",
+        "---\ntype: project\nname: Clean\n---\nGenuinely live.\n",
+    )
+
+    cli.reconcile(str(temp_memory_dir))
+    conn = model.get_connection(str(temp_memory_dir))
+    try:
+        edge_superseded = set(cli._edge_superseded(conn))
+        prose_drift = {f for f, _ in cli._stale_drift(conn)}
+    finally:
+        conn.close()
+
+    # Precise path flags the edge target, and only it.
+    assert edge_superseded == {"loser_a.md"}
+    # The edge target has NO prose marker, so the prose path must NOT claim it —
+    # proving the two detectors are independent and distinguishable.
+    assert prose_drift == set()
+
+
+def test_cli_edge_superseded_reported_by_check(temp_memory_dir):
+    """`qhaway check` surfaces edge-declared supersession of a live loser
+    (non-zero exit, names the loser), as its own block distinct from prose drift."""
+    check_modules_loaded()
+
+    create_topic_file(temp_memory_dir, "filler1.md", "---\ntype: project\nname: F1\n---\nActive.\n")
+    create_topic_file(temp_memory_dir, "filler2.md", "---\ntype: project\nname: F2\n---\nActive.\n")
+    create_topic_file(
+        temp_memory_dir, "new_b.md",
+        "---\ntype: project\nname: New B\nsupersedes: [[old_a]]\n---\nReplacement.\n",
+    )
+    create_topic_file(
+        temp_memory_dir, "old_a.md",
+        "---\ntype: project\nname: Old A\n---\nReplaced, file still live.\n",
+    )
+
+    cli.reconcile(str(temp_memory_dir))
+    res = run_qhaway_cli(["check", "--dir", str(temp_memory_dir)])
+
+    assert res.returncode != 0
+    full_output = res.stdout + res.stderr
+    assert "old_a.md" in full_output
 
 
 def test_cli_role_filtering(temp_memory_dir):

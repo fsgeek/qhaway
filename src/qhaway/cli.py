@@ -240,6 +240,7 @@ def _check(directory: str, budget: int) -> int:
     try:
         dangling = _dangling_links(conn)
         stale_drift = _stale_drift(conn)
+        edge_superseded = _edge_superseded(conn)
         full_projection = project.project_slice(conn, budget=10**12)
     finally:
         conn.close()
@@ -258,6 +259,15 @@ def _check(directory: str, budget: int) -> int:
         )
         for file_name, marker in stale_drift:
             sys.stdout.write(f"- {file_name} (body says {marker}; retire it: set name: 'SUPERSEDED — see ...')\n")
+
+    if edge_superseded:
+        exit_code = 1
+        sys.stdout.write(
+            "live memories a winner declared it supersedes (recall demotes them, "
+            "but the file still reads status: live):\n"
+        )
+        for file_name in edge_superseded:
+            sys.stdout.write(f"- {file_name} (target of a supersedes: edge)\n")
 
     if len(full_projection.encode("utf-8")) > budget:
         overflow = len(full_projection.encode("utf-8")) - budget
@@ -288,6 +298,24 @@ def _stale_drift(conn) -> list[tuple[str, str]]:
         if marker:
             drift.append((file_name, marker))
     return drift
+
+
+def _edge_superseded(conn) -> list[str]:
+    """The PRECISE staleness path: live nodes that are the target of a SUPERSEDES
+    edge (a winner declared `supersedes: [[loser]]`). Unlike _stale_drift's body
+    scrape, this is an exact lookup — the structured signal the prose heuristic
+    was a stand-in for. A node explicitly tombstoned (status != live) is already
+    handled by the projector and not re-reported here.
+    """
+    rows = conn.execute(
+        """
+        SELECT n.file FROM nodes n
+        JOIN edges e ON e.dst_slug = substr(n.file, 1, length(n.file) - 3)
+        WHERE e.kind = 'SUPERSEDES' AND n.status = 'live'
+        ORDER BY n.file
+        """
+    ).fetchall()
+    return [row[0] for row in rows]
 
 
 def _body_supersession_marker(body: str) -> str | None:
