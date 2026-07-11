@@ -1,8 +1,8 @@
 # Ayllu Memory Architecture
 
 **Date:** 2026-07-10
-**Status:** Section-approved conceptual draft under architectural review;
-implementation requires focused follow-up specs
+**Status:** Approved architectural umbrella; implementation requires focused
+follow-up specs
 **Scope:** Architectural umbrella for curated memory, episodic evidence,
 cross-project federation, and Claude/Codex delivery
 **Product identity:** Deferred
@@ -28,14 +28,14 @@ This document defines distinctions, invariants, journeys, stage gates, and
 declared losses. It deliberately does not settle a database, repository,
 package boundary, graph model, or final product name.
 
-### Review posture
+### Change control
 
-During review on the design branch, every architectural decision remains open
-to revision. The federated-capabilities decision is selected, not immune from
-challenge. Review should find incompatible promises, sharpen authority and
-lifecycle seams, and identify focused follow-up specifications. After this
-umbrella is approved and merged, later expansion occurs through new decision
-records and specifications rather than silent scope growth.
+The umbrella was approved after section-by-section design and two independent
+architectural review rounds. The federated-capabilities decision is selected,
+not immune from later evidence. Changes to its authority, lifecycle, or source-
+of-truth boundaries require a new decision record or focused specification;
+they do not arrive as incidental implementation detail. Later expansion occurs
+through explicit stage decisions rather than silent scope growth.
 
 ### Decision accounting
 
