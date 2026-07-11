@@ -319,6 +319,18 @@ historical standing and reduce a reference from `withdrawn` to `missing` or
 `unknown`, but it cannot grant access, delete authoritative material, or make a
 stale agreement active.
 
+The focused coordinator specification must define its writer topology before
+choosing storage. Multiple sessions and multiple consumer projects may update
+coordinator state concurrently. It must not default to one shared mutable file
+without an explicit concurrency protocol. Distinct immutable artifacts,
+append-only records, locks, or database transactions are selected according to
+the state transition they protect; a single writer is acceptable only when the
+system actually enforces one.
+
+Purge granularity is part of that topology. A purge must name the project,
+corpus, and operational-state classes it removes, and must declare when it
+erases withdrawal history or other non-rebuildable observations.
+
 A project has a stable identity and declares:
 
 - its local curated corpus;
@@ -378,8 +390,13 @@ initial episode-identity guarantee.
   curated-memory authority.
 - **Suspected conflict:** a derived, provisional observation that assertions
   may be incompatible. It has no projection authority.
-- **Projection conflict set:** a relationship explicitly curated by an
-  authorized foreground participant. Its membership affects projection.
+- **Curated relationship record:** an authoritative local record that relates
+  qualified memory identifiers without modifying the referenced memories. It
+  is stored in the consumer's authoritative curated corpus and written only
+  through an authorized foreground action. Its authority is limited to the
+  owning corpus and scopes that consume it.
+- **Projection conflict set:** a curated relationship record that identifies
+  supported but incompatible positions. Its membership affects projection.
 
 Qualified references use a logical form independent of backend:
 
@@ -409,8 +426,13 @@ Every curated memory records enough provenance to answer:
 - recording time;
 - evidence references;
 - supersession relationships;
-- projection-conflict-set membership; and
 - whether it originated as a provisional candidate.
+
+A curated relationship record separately records its owning corpus, recording
+participant and time, relationship kind, and qualified member identifiers. A
+consumer may therefore curate a local conflict between a local memory and a
+read-only mounted memory without writing through the mount. The foreign source
+does not acquire or imply knowledge of that consumer-local relationship.
 
 Episode identity prefers source-native durable event identifiers. An adapter
 that must synthesize identity records its adapter name, boundary-algorithm
@@ -427,9 +449,11 @@ Scope is evaluated at access time. Knowing a valid identifier does not grant
 visibility. Resolution requires an active project and the applicable export,
 mount, and content-class permission.
 
-Projection conflict sets do not identify a winner. Supersession expresses an
-explicit lineage judgment within an authorized scope; it does not erase the
-earlier record or automatically apply across corpora.
+Projection conflict sets do not identify a winner. A consumer-local set affects
+only projections that authorize its owning corpus; it does not become a global
+claim about foreign members. Supersession expresses an explicit lineage
+judgment within an authorized scope; it does not erase the earlier record or
+automatically apply across corpora.
 
 ## Classification and observation
 
@@ -488,8 +512,12 @@ context.
 The resident projection contains curated memory only. Episodic evidence remains
 searchable on demand.
 
-Projection is deterministic. No model decides at session start what the next
-participant should know.
+Projection is deterministic: the same authoritative memories, curated
+relationship records, current declarations, projector version, configuration,
+and budget produce byte-identical output. No model decides at session start
+what the next participant should know. "One-sided" is determined only by a
+curated projection conflict set, never by model judgment or a suspected
+conflict observation.
 
 The active budget is partitioned conceptually among:
 
@@ -520,6 +548,15 @@ If even an honest conflict envelope cannot fit, the projector omits every
 assertion in the set and emits the shortest truthful conflict declaration the
 budget permits.
 
+Withdrawal suppression outranks envelope owner disclosure. After a foreign
+member withdraws, the consumer-local relationship record remains local state,
+but the envelope identifies only the count and standing of withdrawn positions,
+not their former owners, identifiers, or content. If all opposing foreign
+members withdraw, a surviving local member still requires an envelope such as
+"one opposing position withdrawn" until an authorized foreground participant
+explicitly revises or retires the local relationship record. Withdrawal cannot
+silently convert a contested claim into an unqualified one.
+
 The local floor reserves capacity for local material; it does not guarantee
 inclusion of a particular local assertion. A local conflict member is subject
 to the same envelope rule. The projector may fill unused local capacity with
@@ -545,6 +582,24 @@ project boundary.
 
 `open_episode()` resolves one qualified identifier and rechecks current scope.
 A previously returned search result is not an access grant after withdrawal.
+
+### Curated and episodic consent
+
+Mounted curated and episodic corpora use different consent moments because
+they were authored for different purposes.
+
+A curated-memory mount explicitly names resident delivery, content classes,
+and allocation. That durable mount-time act authorizes bounded startup
+projection because curated memories were deliberately authored for inheritance.
+A generic mount that does not request resident delivery does not place content
+in startup context.
+
+An episodic mount authorizes availability, not contextual use. Conversation
+records were not authored for inheritance, are more sensitive, and are
+potentially much larger. Each cross-project history query therefore names the
+concrete episodic corpora it searches. The asymmetry is intentional: consent to
+inherit curated guidance is durable, while consent to inspect another
+project's conversation is exercised at query time as well as mount time.
 
 ### Bounded retrieval contract
 
@@ -656,6 +711,26 @@ delivery. Each adapter must:
 No adapter hides semantic differences solely to present identical
 configuration.
 
+### Resident-projection ownership
+
+Exactly one adapter owns resident delivery for each `(project, framework)`
+pair. Projection computation and any qhaway-managed `MEMORY.md` remain owned by
+the qhaway capability; an umbrella adapter orchestrates and delegates to that
+capability rather than introducing a second writer.
+
+Umbrella installation detects an existing standalone qhaway hook, plugin, or
+other resident-delivery adapter. It must adopt and supersede that adapter
+through an explicit migration or fail visibly; the two never coexist. The
+migration preserves the displaced self-identified configuration and records
+what assumed ownership. The focused adapter specification defines when
+uninstall can safely reinstate the displaced adapter and when it must instead
+leave a preserved snapshot plus a visible restoration decision.
+
+The projection writer, SessionStart/SessionEnd delivery, MCP service, and
+project resolver must agree on one active corpus identity. Ambiguous ownership
+or split resolution blocks resident delivery rather than allowing competing
+writes or divergent projections.
+
 Codex's native memory implementation is experimental in the initial evidence
 environment and remains independent. The initial Codex adapter exposes the
 umbrella capabilities through supported hooks and MCP rather than rewriting
@@ -735,6 +810,11 @@ as withdrawn.
 Locally authored memories and candidates remain. If they relied on withdrawn
 evidence, the affected provenance becomes visibly unresolved. This preserves
 local state change without pretending its former grounding remains inspectable.
+
+Consumer-local curated relationship records also remain because they are local
+authored state. Their foreign references resolve as withdrawn, and projection
+uses the privacy-preserving envelope rule: retain the existence and count of
+withdrawn positions without disclosing former owner identity or content.
 
 ### Disable, uninstall, and purge
 
@@ -892,6 +972,10 @@ Evaluation uses real journeys plus deliberate perturbations:
 - search an available source through a stale or incomplete index;
 - make supporting evidence unavailable;
 - distinguish a suspected conflict from a curated projection conflict;
+- project a consumer-local conflict spanning local and mounted memories;
+- withdraw every foreign side of a consumer-local conflict;
+- start with both standalone qhaway and umbrella resident adapters installed;
+- update and selectively purge coordinator state from concurrent sessions;
 - attempt access without one half of the federation agreement; and
 - uninstall and reinstall adapters around state created while active.
 
@@ -933,13 +1017,16 @@ copying episodic content into curated files.
 
 Implement bilateral export and mount declarations. Test local budget protection,
 conflict-envelope projection, named-consumer authorization, withdrawal,
+consumer-local relationships spanning mounted memories, privacy-preserving
+withdrawal envelopes, coordinator writer topology and purge granularity,
 consumer cleanup, and preservation of locally created state.
 
 ### Stage 5: Codex delivery
 
 Expose the same capabilities through supported Codex hooks and MCP
-configuration. Verify symmetric removal and leave Codex-generated native memory
-untouched.
+configuration. Verify single resident-projection ownership, migration from a
+standalone qhaway adapter, symmetric removal, and that Codex-generated native
+memory remains untouched.
 
 ### Later gated work
 
@@ -971,11 +1058,16 @@ their own evidence and specification.
   single-user environment.
 - Removal can stop access and preserve state but cannot make participants
   forget content already observed.
+- A consumer-local relationship may preserve the fact and count of withdrawn
+  opposing positions after their owner and content are suppressed.
 - Exact total-match counts may be unavailable for some retrieval strategies.
 - Episodic search may be stale or incomplete while curated session startup
   remains current.
 - Purging coordinator observations can erase the distinction between a
   previously observed withdrawal and an unknown missing source.
+- Migrating resident-projection ownership adds restoration state that must be
+  preserved until the displaced adapter is either reinstated or deliberately
+  retired.
 - Provenance makes a claim inspectable; it does not make the claim true.
 
 ## Deferred decisions
