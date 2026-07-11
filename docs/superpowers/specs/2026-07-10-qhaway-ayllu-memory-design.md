@@ -1,7 +1,8 @@
 # Ayllu Memory Architecture
 
 **Date:** 2026-07-10
-**Status:** Approved conceptual design; implementation requires focused follow-up specs
+**Status:** Section-approved conceptual draft under architectural review;
+implementation requires focused follow-up specs
 **Scope:** Architectural umbrella for curated memory, episodic evidence,
 cross-project federation, and Claude/Codex delivery
 **Product identity:** Deferred
@@ -26,6 +27,15 @@ or unified database.
 This document defines distinctions, invariants, journeys, stage gates, and
 declared losses. It deliberately does not settle a database, repository,
 package boundary, graph model, or final product name.
+
+### Review posture
+
+During review on the design branch, every architectural decision remains open
+to revision. The federated-capabilities decision is selected, not immune from
+challenge. Review should find incompatible promises, sharpen authority and
+lifecycle seams, and identify focused follow-up specifications. After this
+umbrella is approved and merged, later expansion occurs through new decision
+records and specifications rather than silent scope growth.
 
 ### Decision accounting
 
@@ -142,7 +152,7 @@ The system serves an ayllu of distinct participants rather than a single
 continuous agent.
 
 - **Active agent instance:** performs work, consults memory, searches evidence,
-  and may record curated knowledge.
+  and may deliberately record curated knowledge in the active local corpus.
 - **Future agent instance:** inherits selected context but remains responsible
   for evaluating applicability and current validity.
 - **Human steward:** establishes project relationships, authorizes sharing,
@@ -180,6 +190,22 @@ Human attention is reserved for decisions carrying real authority: federation,
 trust boundaries, consequential ambiguity, and promotion of provisional
 synthesis.
 
+### Curatorial authority
+
+Candidate status describes the authority exercised at recording time, not who
+or what generated the words or which reasoning process produced them.
+
+An authorized foreground participant, human or agent, may deliberately invoke
+`remember()` and thereby exercise curatorial authority in the active local
+corpus. Human approval is not required for every foreground memory. This is the
+current qhaway operating model.
+
+A background or analytical process has no curatorial authority. It may emit
+only provisional candidates. An authorized foreground participant may later
+inspect and explicitly promote a candidate while retaining its origin and
+evidence. Neither foreground nor background processes may write through a
+mount into another corpus.
+
 ## Core distinctions
 
 The system preserves these distinctions even if a future backend stores their
@@ -212,17 +238,19 @@ projections          -> bounded, replaceable views
 No derived database becomes authoritative for identity, ownership, sharing
 consent, or provenance.
 
-### Federation is bilateral
+### Federation is bilateral and consumer-specific
 
 Cross-project access requires both declarations:
 
 ```text
-source exports collection X
-consumer mounts collection X
+source authorizes consumer A to read collection X
+consumer A mounts collection X
 ```
 
-Filesystem readability alone does not grant contextual access. Mounts are
-read-only in the initial design.
+The source-side export names the permitted consumer project identity and
+content class. It does not make a collection generally discoverable or
+available to every project in the ayllu. Filesystem readability alone does not
+grant contextual access. Mounts are read-only in the initial design.
 
 ### Disagreement remains recoverable
 
@@ -239,8 +267,9 @@ merely because consensus is easier to summarize, rank, or project.
 - Retrieval does not prefer agreement with the active participant.
 - Framework-specific interpretations are not normalized away solely because
   they refer to common evidence.
-- A known conflict is projected as a group or omitted as a group with a
-  declaration; budgeting cannot expose only the side that happens to fit.
+- A curated projection conflict never exposes one side as an unqualified
+  standalone assertion. A complete group is preferred; a bounded subset is
+  permitted only inside an explicit envelope that declares omitted positions.
 
 ### Disengagement is non-destructive
 
@@ -274,6 +303,22 @@ curated index                 episodic index
 Each index remains locally rebuildable. The memory facade does not own source
 content and does not require cross-store transactions.
 
+The coordinator is a small owner of operational and derived state, not a
+lifecycle authority over either corpus. It may retain:
+
+- resolved-identity and qualified-reference lookup caches;
+- reconciliation cursors and freshness observations;
+- the last observed state of an export/mount relationship;
+- non-content withdrawal observations needed to distinguish withdrawal from an
+  unknown missing source; and
+- self-identifying framework installation records.
+
+Cached agreements never grant access. Current source and consumer declarations
+are rechecked before cross-project access. Deleting coordinator state may lose
+historical standing and reduce a reference from `withdrawn` to `missing` or
+`unknown`, but it cannot grant access, delete authoritative material, or make a
+stale agreement active.
+
 A project has a stable identity and declares:
 
 - its local curated corpus;
@@ -297,11 +342,26 @@ An optional future candidate generator may read permitted evidence and emit
 provisional records through a narrow extension interface. It cannot write
 curated memory, grant access, or modify authoritative sources.
 
+Candidates, if implemented, live in a separate local candidate corpus rather
+than among qhaway's authoritative topic files. The focused candidate-generation
+specification must choose its physical representation and lifecycle.
+
 ## Domain model
 
 Stable identity is separate from physical location. Paths may change;
 filenames, cycle numbers, and session-local sequence numbers are not globally
 unique.
+
+The initial episodic evidence environment contains a mixture of source shapes:
+
+- Hamut'ay or `taste_open` append-oriented JSONL records keyed by cycle;
+- pichay gateway JSONL events grouped by session, with some episode identifiers
+  synthesized from session and sequence; and
+- Claude Code project JSONL events carrying session identifiers and, for
+  assistant events, source UUIDs.
+
+Codex conversation ingestion is not yet characterized and is not part of the
+initial episode-identity guarantee.
 
 - **Project:** a declared working context with a stable identifier.
 - **Corpus:** an authoritative collection owned by a project or shared ayllu
@@ -311,13 +371,15 @@ unique.
 - **Episode:** an addressable portion of an authoritative conversation record.
 - **Evidence reference:** a qualified pointer from a memory or candidate to an
   episode or other inspectable source.
-- **Export:** a source-side declaration making selected corpus content
-  available.
+- **Export:** a source-side declaration making selected corpus content classes
+  available to named consumer project identities.
 - **Mount:** a consumer-side declaration accepting one export.
 - **Candidate:** a provisional interpretation that may cite evidence but has no
   curated-memory authority.
-- **Conflict set:** an explicit relationship among supported but incompatible
-  assertions.
+- **Suspected conflict:** a derived, provisional observation that assertions
+  may be incompatible. It has no projection authority.
+- **Projection conflict set:** a relationship explicitly curated by an
+  authorized foreground participant. Its membership affects projection.
 
 Qualified references use a logical form independent of backend:
 
@@ -347,8 +409,15 @@ Every curated memory records enough provenance to answer:
 - recording time;
 - evidence references;
 - supersession relationships;
-- conflict-set membership; and
+- projection-conflict-set membership; and
 - whether it originated as a provisional candidate.
+
+Episode identity prefers source-native durable event identifiers. An adapter
+that must synthesize identity records its adapter name, boundary-algorithm
+version, source locator, and content digest. If a source is rewritten or the
+boundary algorithm changes, the adapter creates a new derived episode identity
+or marks the earlier identity unresolved; it never silently reuses an identity
+for different content.
 
 Where a source format permits, an evidence reference retains a source digest or
 stable event identifier so resolution cannot silently drift to different
@@ -358,9 +427,9 @@ Scope is evaluated at access time. Knowing a valid identifier does not grant
 visibility. Resolution requires an active project and the applicable export,
 mount, and content-class permission.
 
-Conflict sets do not identify a winner. Supersession expresses an explicit
-lineage judgment within an authorized scope; it does not erase the earlier
-record or automatically apply across corpora.
+Projection conflict sets do not identify a winner. Supersession expresses an
+explicit lineage judgment within an authorized scope; it does not erase the
+earlier record or automatically apply across corpora.
 
 ## Classification and observation
 
@@ -391,6 +460,9 @@ and suspected conflicts are dynamic outputs tied to:
 
 They are observations about a corpus, not silent additions to its ontology.
 Derived observations never determine access scope, consent, or ownership.
+In particular, a suspected conflict does not make memories an indivisible
+projection unit until an authorized foreground participant curates a projection
+conflict set.
 
 The possible analysis path is:
 
@@ -437,9 +509,22 @@ evidence standing such as grounded, partially grounded, unresolved,
 unsupported, or conflicted. Such labels describe inspectability, not truth, and
 the examples do not define a closed status list.
 
-Known conflicts are selection units. The projector either includes every
-materially distinct position with its source or omits the conflict as a group
-and declares that unresolved positions were withheld.
+Curated projection conflict sets require a conflict envelope whenever any
+member appears. The preferred rendering includes every materially distinct
+position with its source. If the complete set cannot fit, the projector may
+include a subset only inside an envelope that declares the number and owners of
+omitted positions and gives a route to recall the conflict. A member never
+appears as an unqualified standalone assertion.
+
+If even an honest conflict envelope cannot fit, the projector omits every
+assertion in the set and emits the shortest truthful conflict declaration the
+budget permits.
+
+The local floor reserves capacity for local material; it does not guarantee
+inclusion of a particular local assertion. A local conflict member is subject
+to the same envelope rule. The projector may fill unused local capacity with
+other local memories, and may leave capacity unused when using it would create
+a one-sided representation. Honest standing outranks budget utilization.
 
 Omissions are declared by the most useful available dimensions, which may
 include source, authored facet, or unresolved conflict. When a budget is too
@@ -451,9 +536,12 @@ apparently complete but partial index.
 curated collections.
 
 `search_history()` defaults to the current project's enrolled episodic corpus.
-Searching mounted episodic collections requires explicit query scope even when
-the mount already authorizes access. This retains friction at the point where
-conversation crosses a project boundary.
+Searching mounted episodic collections requires the caller to name the actual
+qualified corpus identifiers in the query. A boolean such as
+`include_mounted=true` is insufficient contextual consent. A later named scope
+may be supported only if the response expands it into the concrete corpora
+considered. This retains friction at the point where conversation crosses a
+project boundary.
 
 `open_episode()` resolves one qualified identifier and rechecks current scope.
 A previously returned search result is not an access grant after withdrawal.
@@ -468,6 +556,8 @@ query
 strategy
 match semantics
 scope considered
+source availability
+index freshness and indexed-through position
 items returned
 total matches
 total standing: exact / estimated / lower bound / unknown
@@ -504,6 +594,22 @@ corpus.
   histories, or private mounts.
 - Shareable configuration may describe logical identifiers but should not
   contain private absolute paths or credentials.
+
+Authority placement is independent of the eventual package layout:
+
+- an export declaration lives in owner-controlled local configuration
+  associated with the source project's canonical root;
+- a mount declaration lives in consumer-controlled local configuration
+  associated with the consumer's canonical root; and
+- neither declaration is inherited from version-controlled repository content.
+
+There is no discovery service in the initial design. A local mount declaration
+names both the qualified source corpus and a local source locator. The
+coordinator follows that explicit locator to read the source-side declaration,
+then verifies that the declaration names the active consumer identity and
+content class. This one-time manual locator is the cost of avoiding a registry
+while preserving bilateral consent; subsequent validation and reconciliation
+are automatic.
 
 Project identity must incorporate local context that repository content alone
 cannot spoof. Canonical roots plus locally held declarations may be adequate
@@ -591,10 +697,31 @@ Framework adapters modify only self-identified configuration.
 
 ### Normal operation
 
-At session start, the adapter resolves the active project, reconciles enrolled
-sources, validates exports and mounts, and delivers the bounded curated
-projection. Background processing, if later implemented, runs only for enrolled
-sources and writes provisional candidate state separately.
+At session start, the adapter resolves the active project and synchronously
+reconciles the local curated source required to build the resident projection.
+It validates exports and mounts, but a large episodic backlog, deleted episodic
+index, or incomplete episodic reconciliation does not block curated startup.
+
+The adapter may perform a bounded incremental episodic reconciliation during
+startup. Work that cannot complete within that bound continues through a
+framework-supported later action or leaves history search visibly stale or
+incomplete. The initial focused specification must select the concrete
+execution mechanism; this umbrella does not imply a daemon.
+
+Reconciliation after enrollment remains automatic. Incomplete work is retried
+at subsequent supported lifecycle opportunities and before history search; it
+does not wait for a human ingestion command. A focused implementation that
+cannot converge under the observed source-growth rate fails its stage gate and
+must repair or reframe rather than normalize permanent staleness.
+
+Source availability, derived-index availability, and index freshness are
+separate observations. An episodic source can be available while its index is
+stale or rebuilding. History-search responses disclose the indexed-through
+position or time and one of the supported freshness standings rather than
+presenting the indexed subset as current.
+
+Background processing, if later implemented, runs only for enrolled sources
+and writes provisional candidate state separately.
 
 `remember()` writes the authoritative topic file before updating derived state.
 Index failure cannot make the database appear newer than its source.
@@ -624,6 +751,13 @@ Uninstall removes only owned integration and preserves:
 Rebuildable indexes may remain inert but no longer affect a framework. Deleting
 them is an explicit purge operation.
 
+Preserving a candidate across uninstall means retaining it as inert local data.
+It is not visible to a framework and is not eligible for promotion while the
+interpreting capability is absent. Reinstallation may reactivate it only when
+the generating method, schema version, evidence scope, and corpus snapshot
+remain interpretable. Otherwise it remains an archival candidate requiring
+explicit review or purge.
+
 Reinstallation reconciles authoritative sources and recognizes prior owned
 artifacts. It does not duplicate mounts, hooks, memories, or episodes.
 
@@ -632,6 +766,26 @@ artifacts. It does not duplicate mounts, hooks, memories, or episodes.
 Failure of a local authoritative source blocks the affected operation and is
 reported. Failure of an optional mounted source permits local operation with a
 visible partial-availability declaration. No fallback silently changes scope.
+
+At minimum, implementations distinguish the independent facts needed to
+represent these situations:
+
+```text
+source available, index current
+source available, index stale
+source available, reconciliation incomplete
+source unavailable, prior derived state retained
+source unavailable, prior derived state purged
+```
+
+The examples are not a required enum. The invariant is that source resolution,
+index presence, freshness, and access standing are not collapsed into one
+`available` flag.
+
+Previously derived local episodic results may be queried only through an
+explicit stale-reading mode that reports their indexed-through position.
+Previously derived mounted results are inaccessible when the coordinator cannot
+verify the current source export; a cached agreement never extends consent.
 
 ## Complexity containment and placement
 
@@ -735,7 +889,9 @@ Evaluation uses real journeys plus deliberate perturbations:
 - introduce supported conflicting memories;
 - change framework;
 - limit a search to one result while retaining population standing;
+- search an available source through a stale or incomplete index;
 - make supporting evidence unavailable;
+- distinguish a suspected conflict from a curated projection conflict;
 - attempt access without one half of the federation agreement; and
 - uninstall and reinstall adapters around state created while active.
 
@@ -756,7 +912,8 @@ adversarial fixtures for conflict, withdrawal, missing evidence, and isolation.
 ### Stage 1: Episodic contract
 
 Define stable episode identity and bounded search responses, including retrieval
-basis, match semantics, total-match standing, and exact episode opening. Run the
+basis, match semantics, total-match standing, freshness, and exact episode
+opening. Characterize identity for each existing JSONL adapter and run the
 existing Arango implementation through the contract.
 
 ### Stage 2: Retrieval experiment
@@ -775,8 +932,8 @@ copying episodic content into curated files.
 ### Stage 4: Read-only federation
 
 Implement bilateral export and mount declarations. Test local budget protection,
-conflict-group projection, withdrawal, consumer cleanup, and preservation of
-locally created state.
+conflict-envelope projection, named-consumer authorization, withdrawal,
+consumer cleanup, and preservation of locally created state.
 
 ### Stage 5: Codex delivery
 
@@ -804,6 +961,8 @@ their own evidence and specification.
   meaning or ontology.
 - Episode boundaries are source-adapter interpretations, not natural facts
   inherent in conversation logs.
+- Sources without durable event identifiers require synthesized identities that
+  can become unresolved after rewriting or adapter-algorithm changes.
 - Conflict detection is incomplete unless participants or analysis identify a
   conflict.
 - Cross-framework delivery cannot guarantee identical interpretation or
@@ -813,6 +972,10 @@ their own evidence and specification.
 - Removal can stop access and preserve state but cannot make participants
   forget content already observed.
 - Exact total-match counts may be unavailable for some retrieval strategies.
+- Episodic search may be stale or incomplete while curated session startup
+  remains current.
+- Purging coordinator observations can erase the distinction between a
+  previously observed withdrawal and an unknown missing source.
 - Provenance makes a claim inspectable; it does not make the claim true.
 
 ## Deferred decisions
