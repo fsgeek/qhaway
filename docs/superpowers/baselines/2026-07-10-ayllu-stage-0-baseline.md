@@ -89,6 +89,24 @@ benign uv warning that its active virtual environment is ignored in favor of
 
 ## Adversarial Fixture Standing
 
+The fixture catalog is
+`docs/superpowers/baselines/2026-07-10-ayllu-stage-0-adversarial-fixtures.yaml`.
+Its standing is `declarative_only`: these are reviewable, backend-neutral
+scenarios with explicit expected standing, not passing product tests.
+
+| Fixture | Earliest executable stage | Standing at Stage 0 |
+|---|---|---|
+| `missing-episode-evidence` | Stage 1 | Defined; exact reference and unavailable-source semantics require the episodic contract |
+| `stale-index-bounded-search` | Stage 1 | Defined; bounded results, total-match standing, and indexed-through standing require the episodic contract |
+| `curated-conflict-local-mounted` | Stage 4 | Defined; no current federation or consumer-local cross-corpus conflict record exists |
+| `export-withdrawal` | Stage 4 | Defined; no current bilateral export/mount relationship exists to withdraw |
+| `bilateral-isolation` | Stage 4 | Defined; no current named-consumer authorization path exists to exercise |
+
+All five fixtures are non-sensitive and contain synthetic qualified identifiers.
+None is executable in the current qhaway/`llm-memory` capability set. Preserving
+that distinction prevents declarative coverage from being reported as product
+behavior.
+
 ## Evaluation Dimensions
 
 ## Stage Decision
