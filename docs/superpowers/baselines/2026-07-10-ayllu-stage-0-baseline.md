@@ -41,6 +41,52 @@ Codex delivery, or any interpretation of `AGENTS.md` or `CLAUDE.md`.
 
 ## llm-memory Baseline
 
+| Probe | Source standing | Index standing | Result | Interpretation |
+|---|---|---|---|---|
+| Frozen complete suite | Live ArangoDB accepts uniquely keyed test episodes; tests remove those records afterward | Existing collection and search view are reachable | 17 passed in 1.18 seconds | Current ingestion transforms, scoped BM25 search, exact-key recall, and read-only MCP surfaces satisfy their shipped assertions |
+| Aggregate corpus-shape query | Authoritative source files were not opened; the derived collection contains 1,221 `claude_code` records and 2,659 `yanantin_construction` records | Collection is available; freshness is not observable | Every `claude_code` record has `cycle`; every `yanantin_construction` record lacks `cycle` | A result contract centered on `cycle` cannot represent every currently indexed corpus |
+| Five-query historical replay | Expected derived episode keys `000430`, `000431`, `000444`, `000456`, and `000457` are absent | Conversation-inclusive view is available and returns ranked mixed-corpus hits; freshness is not observable | 0/5 in top three; returned hits have `cycle: null`; command exits 1 | Ground truth is unavailable in the current collection, so this is a fixture/source-standing failure plus a result-identity mismatch, not evidence that conversation-inclusive ranking lost the expected episodes |
+| Read-only state/conversation comparison | Same absent historical episodes | Both `episodes_state_only` and `episodes_search` exist; neither view was created or updated by Stage 0 | State-only 0/5; conversation-inclusive 0/5 | The comparison is observable but cannot discriminate retrieval quality without its expected source episodes |
+| Margin and paraphrase characterization | Same absent historical episodes | Conversation-inclusive view returns scored top-ten lists | Expected cycles absent from all top-ten lists; all three paraphrases miss | Neither margin nor semantic reach can be evaluated against missing ground truth; the lexical limitation remains a hypothesis rather than a Stage 0 verdict |
+| Adapter/search/recall/MCP slice | Test-owned records only | Existing view and exact-key collection lookup are reachable | 11 passed in 0.87 seconds | Adapter identity and current search/recall behavior are executable independently of the unavailable historical fixture |
+
+### Corpus and Identity Observations
+
+- taste_open maps one record to a cycle-addressed episode and currently uses the
+  zero-padded cycle as `_key`.
+- The pichay gateway maps request events to session plus a synthesized sequence;
+  that sequence becomes both part of `_key` and the returned `cycle`.
+- Claude Code maps assistant prose turns to session plus assistant UUID. These
+  records have no `cycle`, although the current `search()` response always
+  includes a `cycle` field.
+- No Codex conversation source or stable event identity has been characterized.
+- `scope="all"` deliberately searches across corpora. The historical evaluation
+  fixture names expected cycles but names no concrete corpus, so unrelated
+  records without cycles can occupy its bounded result set.
+
+### Known Baseline Failure
+
+The five real queries remain useful records of prior retrieval failures, but
+their current replay is not self-contained. It assumes that a particular
+cycle-addressed taste_open corpus has already been ingested and that a mixed
+`scope="all"` result can be judged solely by `cycle`. The current database
+contains neither the expected episode keys nor a taste_open-labeled corpus.
+
+Stage 0 therefore declares the retrieval-quality comparison unavailable rather
+than converting 0/5 into manufactured evidence. Stage 1 must make corpus
+identity and result identity explicit, and must report source availability,
+index availability, freshness, and match-population standing separately.
+
+### Operational Dependencies
+
+`llm-memory` requires a reachable ArangoDB, local database configuration, the
+`episodes` collection, and the named ArangoSearch views. Its tests and reads
+succeeded with the running container. The current search response exposes no
+indexed-through cursor or timestamp, so index freshness cannot be inferred from
+availability. Running commands from the qhaway environment also produces a
+benign uv warning that its active virtual environment is ignored in favor of
+`llm-memory/.venv`.
+
 ## Adversarial Fixture Standing
 
 ## Evaluation Dimensions
