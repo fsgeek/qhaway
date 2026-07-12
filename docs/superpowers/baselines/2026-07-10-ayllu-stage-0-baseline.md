@@ -109,4 +109,62 @@ behavior.
 
 ## Evaluation Dimensions
 
+| Dimension | Finding | Evidence | Declared limitation |
+|---|---|---|---|
+| Fidelity | Current local transforms and exact retrieval paths preserve the fields asserted by their tests | Qhaway complete suite; `llm-memory` ingestion, search, recall, and MCP slice | The absent historical episodes prevent a current real-corpus ranking-fidelity measurement |
+| Declared loss | Qhaway declares bounded projection omissions and preserves a displaced pre-install file | Budget-overflow, no-silent-omission, exit-footer, and lifecycle assertions | Episodic search does not declare total-match standing, freshness, or the effect of mixed-corpus truncation |
+| Selectivity | `llm-memory` can filter by `experiment_label`, but its default all-corpus scope invalidates the cycle-only historical fixture in the current mixed collection | Scoped-search test and live replay returning cycle-less records | Labels are illustrative partitions, not bilateral authorization or a stable corpus ontology |
+| Dissent retention | Current qhaway can retain authoritative topic files while projection applies supersession and bounded selection | Qhaway complete suite and preserved topic-corpus lifecycle | Curated conflict sets, cross-corpus conflict envelopes, and privacy-preserving withdrawal are not observable at Stage 0 |
+| Provenance | Qhaway projects from authoritative topic files; episodic search returns an exact collection key that recall can open | Qhaway rebuild tests; `llm-memory` search/recall and MCP tests | There is no cross-capability reference standing, and a missing episode resolves only to absence rather than a qualified failure state |
+| Continuity | A fresh Claude session can receive a rebuilt local projection, and uninstall preserves curated sources and the pre-install file | Session lifecycle, exit sequence, setup, and rebuild assertions | Episodic history is not reconciled or delivered through the qhaway lifecycle, and no Codex journey exists |
+| Isolation | Search scope prevents one test corpus from appearing in another label-scoped query | `test_scope_partitions_corpora_by_experiment_label` | A label filter is not an access-control boundary; bilateral export/mount authorization is only a declarative fixture |
+| Recoverability | Qhaway rebuilds its derived SQLite state from topic files after schema drift and serializes destructive rebuilds | Focused schema-drift, bounded-rebuild, and serialization probes | Episodic source-to-index rebuilding was not exercised because Stage 0 neither opened authoritative logs nor modified the live index |
+| Unobtrusiveness | Qhaway self-gates when no topic corpus exists and needs no operator action for its tested session lifecycle | Dormant/active lifecycle and idempotent setup assertions | `llm-memory` currently requires a configured ArangoDB and explicit corpus ingestion; freshness and automatic reconciliation are absent from the interface |
+| Generativity | Not observable at Stage 0 | The five real queries are preserved, but their expected source episodes are unavailable | Synthetic passing tests and ranked unrelated hits do not establish that the combined system creates useful new connections |
+| Complexity | The two current capabilities have visible, different operational boundaries: local SQLite projection versus containerized ArangoSearch history | Dependency inventory, worktree inspection, test execution, and live database probes | Coordinator ownership, adapter migration, federation lifecycle, and total removal cost cannot be measured before their focused specifications exist |
+
+The dimensions remain separate. In particular, the clean qhaway lifecycle does
+not cancel the episodic evaluation gap, and the episodic identity gap does not
+erase qhaway's demonstrated declared-loss and recovery behavior.
+
 ## Stage Decision
+
+**Decision: continue**
+
+Stage 0 has enough evidence to authorize a focused Stage 1 episodic-contract
+specification, and nothing beyond it. Three observations earn that next design
+step:
+
+1. The existing episodic implementation has executable ingestion, scoped
+   lexical search, exact-key recall, and a read-only MCP surface across three
+   source shapes.
+2. The live collection contains two incompatible result-identity shapes, while
+   the historical evaluation assumes one cycle-addressed shape and no concrete
+   corpus. This is direct evidence that stable episode identity and explicit
+   corpus scope are prerequisites rather than speculative abstraction.
+3. Index availability is observable, but source availability, freshness,
+   indexed-through position, and total-match standing are not. These are the
+   exact contract distinctions Stage 1 is intended to define.
+
+Repairing the missing historical fixture inside Stage 0 is the strongest
+alternative. It is rejected because ingesting a former corpus would mutate
+persistent derived state, would restore only one evaluation environment, and
+would not resolve the mixed identity or missing-standing contracts exposed by
+the current corpus. Retrieval backend quality remains unevaluated and is not a
+basis for this decision.
+
+### Stage 1 Specification Preconditions
+
+1. Define a result identity that does not assume every corpus has `cycle`.
+2. Require concrete corpus scope in the evaluation fixture and retrieval
+   contract.
+3. Separate source, index, freshness, and match-population standing.
+4. Define bounded results plus exact or explicitly unavailable total-match
+   standing.
+5. Characterize taste_open, gateway, and Claude Code identity; characterize
+   Codex only after its actual source format is observed.
+6. Preserve ArangoDB as the implementation under test; do not select or
+   implement SQLite FTS5 in Stage 1.
+
+This decision stops at permission to write the focused specification. No Stage
+1 design or implementation is part of this artifact.
