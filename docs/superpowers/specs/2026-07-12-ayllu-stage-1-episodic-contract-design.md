@@ -31,6 +31,19 @@ It neither selects nor implements SQLite FTS5. Dynamic faceting remains an
 additive future contract extension rather than being designed through static
 categories now.
 
+### Stage boundary accounting
+
+This focused stage is intentionally larger than the umbrella's one-sentence
+summary. Freshness standing cannot be implemented honestly without enrollment
+and reconciliation observations, and indexing a second conversation copy
+creates an immediate disable, unenroll, and purge obligation. Those supporting
+mechanisms are therefore inside Stage 1 rather than being inherited silently.
+
+The expansion stops at local episodic operation. It does not add a coordinator,
+federation, cross-project authorization, curated-memory links, another backend,
+or framework-specific delivery. The implementation plan must preserve these
+supporting mechanisms as separable tasks so their cost remains reviewable.
+
 ## Why Stage 1 is earned
 
 Stage 0 found that qhaway's current local projection and lifecycle are stable,
@@ -97,8 +110,11 @@ max_limit: 100
 ```
 
 Clients must not infer a capability from an optional field appearing in one
-response. An unknown required extension fails visibly. Additive optional
-extensions require explicit provider capability and response standing.
+response. Version 1 schemas are strict and contain no extension carrier field.
+The first extension specification must define its request carrier, required
+versus optional negotiation, and failure response; unknown fields in a Stage 1
+request fail ordinary schema validation rather than being ignored. Additive
+optional extensions require explicit provider capability and response standing.
 
 This permits a later dynamic-faceting extension to add filters, facet requests,
 bucket counts, and bucket standings without changing episode identity or the
@@ -115,7 +131,8 @@ contract_version: 1
 corpus_id: qhaway-history
 source_id: qhaway-claude-sessions
 adapter: claude_code_jsonl
-adapter_version: 1
+boundary_version: 1
+canonicalization_version: 1
 locator: /local/path/to/source-or-source-set
 enabled: true
 ```
@@ -128,6 +145,17 @@ declaration, not Arango state, authorizes enrollment.
 enrolled stream or source set within that corpus. Neither is derived from a
 path. A source may move when its declaration is updated without changing its
 logical identity.
+
+Several source declarations may share one `corpus_id`, including declarations
+using different adapters. Naming that corpus in a search considers every
+enabled source declaration under it and returns their standing separately. A
+caller does not need to know physical source membership to name the logical
+corpus, but the response never hides that membership.
+
+The declaration selects identity-bearing `boundary_version` and
+`canonicalization_version`. The installed adapter separately reports an
+`implementation_version`. A parsing fix or performance release that preserves
+the selected boundary and canonical output does not churn episode identities.
 
 Stage 1 is local-only. Enrollment does not export a corpus, authorize another
 project, or create a mount. Repository content and filesystem readability do
@@ -150,7 +178,7 @@ The initial construction is deterministic:
 ```text
 session-id = urlsafe(source-id, native-session-id-or-declared-stream-id)
 episode-id = urlsafe(
-  adapter-version,
+  canonicalization-version,
   boundary-version,
   native-or-synthesized-event-token,
   full-sha256-content-digest
@@ -180,7 +208,8 @@ source_id: source
 session_id: session
 episode_id: episode
 adapter: adapter_name
-adapter_version: 1
+implementation_version: 1.0.0
+canonicalization_version: 1
 boundary_version: 1
 native_event_id: optional-source-native-id
 source_position: adapter-defined-position
@@ -212,8 +241,9 @@ identifier cannot silently resolve as the former episode.
 - The source-native `session_id` supplies the session boundary.
 - When no durable event identifier exists, the adapter synthesizes the event
   component from session-local sequence.
-- The identity records the boundary algorithm and adapter versions plus the
-  canonical-content digest.
+- The identity records the boundary and canonicalization versions plus the
+  canonical-content digest. The implementation version remains provenance but
+  does not participate in identity.
 - Insertion, deletion, or resegmentation may change synthesized identities.
   This weakness is declared rather than hidden behind a stable-looking key.
 - A prompt-only historical record remains prompt-only; missing responses are
@@ -225,6 +255,11 @@ identifier cannot silently resolve as the former episode.
 - Assistant-event UUID supplies the native event identifier.
 - The episode pairs assistant prose with the most recent preceding user prose
   under a versioned boundary algorithm.
+- Several prose-bearing assistant events after one user event become distinct
+  episodes paired with the same user prose; the duplication is part of boundary
+  version 1 rather than evidence of several user turns.
+- User prose with no later prose-bearing assistant event produces no episode
+  under boundary version 1.
 - Tool-only assistant events without prose do not become prose episodes under
   version 1.
 - The canonical digest detects content or boundary drift beneath a reused UUID.
@@ -242,12 +277,20 @@ declaration retains its `corpus_id` and `source_id`.
 
 When source content, episode boundaries, or canonicalization changes:
 
-- newly reconciled content receives the identity produced by the current
-  adapter and boundary version;
+- newly reconciled content receives the identity produced by the selected
+  canonicalization and boundary versions;
 - the prior reference resolves to `content_mismatch`, `missing`, or an explicit
   superseded standing when such history is available;
 - the old identity is never silently attached to different content; and
 - only derived state for the affected source is rebuilt.
+
+When reconciliation can relate old and new identities through the same source,
+member, and native or synthesized event token, it records a derived
+old-reference-to-new-reference observation with reason and detection time.
+`open_episode()` may then return `superseded` and the replacement reference.
+The reconciler owns this operational mapping; it is not source authority. Purge
+may remove it, after which the old reference honestly degrades to `missing` or
+`content_mismatch`.
 
 Stage 1 does not promise stable synthesized gateway identities across arbitrary
 insertion or deletion before an episode. It promises that instability is
@@ -317,42 +360,125 @@ strategy: lexical_bm25_text_en_v1
 match_semantics: analyzed_any_token
 corpus_ids_considered:
   - qhaway-history
-corpus_standing: []
+corpus_standing:
+  - corpus_id: qhaway-history
+    indexed_matches: 12
+    match_standing: exact
+    sources:
+      - source_id: qhaway-claude-sessions
+        adapter: claude_code_jsonl
+        implementation_version: 1.0.0
+        boundary_version: 1
+        canonicalization_version: 1
+        source_set_standing: available
+        members:
+          - member_id: session-a
+            source_standing: available
+            index_standing: available
+            freshness: current
+            indexed_through:
+              kind: byte_offset
+              value: 182734
+            observed_source_end:
+              kind: byte_offset
+              value: 182734
+            integrity:
+              basis: full_digest
+              validated_at: 2026-07-12T18:30:00Z
+          - member_id: session-b
+            source_standing: available
+            index_standing: available
+            freshness: current
+            indexed_through:
+              kind: byte_offset
+              value: 93117
+            observed_source_end:
+              kind: byte_offset
+              value: 93117
+            integrity:
+              basis: full_digest
+              validated_at: 2026-07-12T18:30:00Z
 returned_count: 1
 total_matches: 12
 total_standing: exact
-results: []
+results:
+  - episode_ref: episode://qhaway-history/qhaway-claude-sessions~session-a/c1-b1-assistant-7f3a~sha256-0000000000000000000000000000000000000000000000000000000000000000
+    corpus_id: qhaway-history
+    session_id: qhaway-claude-sessions~session-a
+    episode_id: c1-b1-assistant-7f3a~sha256-0000000000000000000000000000000000000000000000000000000000000000
+    timestamp: 2026-07-12T18:29:10Z
+    score: 8.42
+    match_attribution:
+      field: response
+      method: provider_heuristic_v1
+      standing: heuristic
+    snippet: projection ownership is recorded explicitly
 ```
 
 ### Corpus standing
 
-Every named corpus receives its own standing:
+Every named corpus receives its own standing. Corpus standing nests every
+enrolled source that contributed or failed to contribute, and a source-set
+adapter nests every observed member. Counts aggregate at corpus level; source
+availability and freshness remain attached to the source member that was
+actually observed:
 
 ```yaml
 corpus_id: qhaway-history
-source_standing: available
-index_standing: available
-freshness: current
-indexed_through:
-  kind: byte_offset
-  value: 182734
-observed_source_end:
-  kind: byte_offset
-  value: 182734
-adapter: claude_code_jsonl
-adapter_version: 1
 indexed_matches: 12
 match_standing: exact
+sources:
+  - source_id: qhaway-claude-sessions
+    adapter: claude_code_jsonl
+    implementation_version: 1.0.0
+    boundary_version: 1
+    canonicalization_version: 1
+    source_set_standing: available
+    members:
+      - member_id: session-a
+        source_standing: available
+        index_standing: available
+        freshness: current
+        indexed_through:
+          kind: byte_offset
+          value: 182734
+        observed_source_end:
+          kind: byte_offset
+          value: 182734
+        integrity:
+          basis: full_digest
+          validated_at: 2026-07-12T18:30:00Z
 ```
 
-Source standing and index standing are independent. Initial source standings
-are:
+A single-file adapter reports one member. A directory or source-set adapter,
+including a Claude Code project directory, reports one stable `member_id` and
+position pair per observed file or native stream. A byte offset is meaningful
+only inside that member; no single byte offset claims to cover a file set.
+
+`source_set_standing` reports whether the declaration's locator can be
+enumerated. Each member has its own `source_standing`; a readable directory does
+not conceal an unavailable, malformed, or vanished member.
+
+The member list includes both currently enumerated members and previously
+indexed members retained in reconciliation state. A member that disappears
+therefore remains visible as `unavailable` or `missing` until reconciliation
+resolves the change or an explicit purge removes that derived observation.
+
+A corpus may contain multiple source declarations using different adapters.
+The response preserves all of them under `sources`; it does not collapse their
+adapter versions, positions, availability, or freshness into one scalar corpus
+claim.
+
+Source-set, member-source, and index standing are independent. Source-set and
+member-source standing use these initial values:
 
 ```text
 available
 unavailable
+missing
 unknown
 unsupported_adapter
+malformed
 ```
 
 Initial index standings are:
@@ -367,15 +493,22 @@ Initial freshness standings are:
 
 ```text
 current
+tail_validated
 stale
 incomplete
 unknown
 unavailable
 ```
 
-`current` means the adapter validated the source through the reported observed
-end under the current adapter and boundary versions. Filesystem metadata alone
-does not prove `current`.
+`current` means a whole-member integrity audit validated canonical episode
+digests through the reported observed end under the selected canonicalization
+and boundary versions. It is a timestamped observation, not a timeless claim.
+The response includes `integrity.validated_at`, and the enrollment policy exposes
+the maximum age after which that observation expires.
+
+`tail_validated` means complete new records and the current end boundary were
+validated, but the already-indexed prefix has not completed a whole-member audit
+within the configured age. Filesystem metadata alone never proves `current`.
 
 `incomplete` includes a source whose last record is partial or whose bounded
 reconciliation stopped before the observed end. `unknown` means the system
@@ -384,7 +517,7 @@ known source change extends beyond or disagrees with indexed state.
 
 The exact shape of `indexed_through` is adapter-defined and names its kind. A
 byte offset, native event identifier, or line/event sequence is valid only with
-the adapter and source identity that interprets it.
+the adapter, source, and member identity that interprets it.
 
 For the Stage 1 Arango strategy, every available corpus also reports its exact
 indexed match count. The response-level `total_matches` is the sum across the
@@ -463,7 +596,8 @@ The contract remains extensible because:
 - query population is defined independently of result `limit`;
 - population standing is explicit;
 - contract and provider capabilities are versioned; and
-- future required extensions fail rather than being ignored.
+- the future extension specification must add an explicit negotiated carrier
+  rather than overloading current fields.
 
 A later metadata-faceting extension may add adapter-declared dimensions,
 query-time values, filters, facet requests, per-bucket counts, and omission
@@ -495,6 +629,8 @@ source_unavailable
 missing
 content_mismatch
 unsupported_adapter
+malformed_source
+superseded
 ```
 
 An `available` result includes the exact source-backed episode content and its
@@ -517,7 +653,8 @@ provenance:
   corpus_id: corpus
   source_id: source
   adapter: adapter_name
-  adapter_version: 1
+  implementation_version: 1.0.0
+  canonicalization_version: 1
   boundary_version: 1
   native_event_id: optional-source-native-id
   source_position: adapter-defined-position
@@ -530,6 +667,10 @@ another corpus. `adapter_fields` retains source-specific evidence needed for a
 faithful episode, such as gateway message context, without promoting those
 fields into universal search facets. The content digest covers the evidence
 body fields but excludes `episode_ref` and the provenance wrapper.
+
+For `superseded`, the response includes a replacement reference only when the
+reconciler's retained mapping establishes one. It does not return former or
+replacement content without separately opening the replacement reference.
 
 The Arango copy may locate a reference and support search, but it cannot satisfy
 `open_episode()` when the source is unavailable or disagrees with the recorded
@@ -566,15 +707,45 @@ standing for other corpora.
 
 ### Change detection
 
-Each derived episode retains source position, adapter and boundary versions,
-and content digest. Reconciliation detects:
+Each derived episode retains source position, implementation,
+canonicalization, and boundary versions, plus its content digest.
+Reconciliation detects:
 
 - append;
 - truncation;
 - rewrite;
 - source relocation;
-- adapter-version change; and
+- canonicalization-version change; and
 - boundary-algorithm change.
+
+An implementation-version change with identical selected canonicalization and
+boundary versions triggers compatibility validation but does not by itself
+rebuild identities. If the new implementation produces different canonical
+content under the same identity-bearing versions, reconciliation fails visibly;
+the implementation must correct the regression or declare a new semantic
+version.
+
+Routine append reconciliation validates the tail and advances indexing cheaply.
+Prefix-rewrite detection uses a resumable whole-member integrity audit:
+
+1. Record the member generation metadata and observed end when the audit starts.
+2. Re-read and hash canonical episodes from the beginning in bounded chunks,
+   persisting only derived audit progress and digest state.
+3. After reaching the observed end, verify that generation metadata and end did
+   not change during the audit.
+4. Compare the resulting episode digests with indexed identities and only then
+   report `current` with `validated_at`.
+5. Restart the audit if the member changes while it is in progress.
+
+Service startup and pre-search reconciliation spend their bounded allowance on
+both tail work and the oldest due integrity audits. Once a `current` observation
+exceeds the configured full-validation age, standing becomes `tail_validated`
+until another audit completes. An in-place prefix rewrite that evades generation
+metadata may therefore remain undetected during that declared interval, but the
+system never calls a tail-only observation `current`.
+
+Whole-member auditing is O(source bytes). Audit bytes, elapsed time, validation
+age, and restarts are reported separately from ingestion and search latency.
 
 Correctness outranks a cheap claim of freshness. A metadata-only quick path may
 avoid work only when it can preserve an honest non-current standing. `current`
@@ -589,9 +760,10 @@ replacement collections/documents sufficient to protect that transition.
 
 The implementation records reconciliation work and elapsed time separately
 from search latency. Under observed source growth, automatic reconciliation
-must eventually reach `current` without manual ingestion. If bounded work loses
-ground indefinitely, Stage 1 must repair or reframe rather than normalize
-permanent staleness.
+must periodically reach `current` without manual ingestion and must keep tail
+reconciliation from losing ground. If bounded work cannot complete integrity
+audits or loses ground indefinitely, Stage 1 must repair or reframe rather than
+normalize permanent `tail_validated` or stale standing.
 
 ## Component boundaries
 
@@ -617,7 +789,9 @@ references. Each adapter can be tested without Arango.
 
 Compares declarations and source state with derived reconciliation state,
 writes Arango episode documents, and records indexed-through and freshness
-observations. It never modifies source logs.
+observations. It also owns derived old-reference-to-new-reference observations
+when a rewrite or semantic version change can be related safely. It never
+modifies source logs.
 
 ### Search provider
 
@@ -673,6 +847,7 @@ Invalid requests fail as structured request errors:
 Expected evidence conditions are response standings rather than exceptions:
 
 - source unavailable;
+- source malformed;
 - index stale or incomplete;
 - episode missing;
 - content mismatch; and
@@ -705,7 +880,9 @@ None deletes, rewrites, truncates, or relocates the authoritative source.
 Disabling preserves the declaration and derived state but removes the source
 from active search scope. Unenrollment removes authority to use the source; it
 does not pretend retained derived data has disappeared. Purge names corpus,
-source, and derived-state classes and reports what it removed.
+source, and derived-state classes and reports what it removed. Supersession
+observations are a separately named purge class because deleting them can reduce
+an old reference from `superseded` to `missing` or `content_mismatch`.
 
 Re-enrollment validates retained state against the current source and adapter
 before claiming `current`. If retained state cannot be trusted, it is rebuilt.
@@ -724,12 +901,17 @@ Small synthetic JSONL fixtures exercise deterministic mechanics without
 committing private conversation excerpts. They cover:
 
 - each supported adapter identity shape;
+- a corpus with multiple differently adapted sources;
+- a source-set with independently positioned members;
 - source relocation;
 - append;
 - partial trailing record;
 - malformed complete record;
 - truncation and rewrite;
-- adapter and boundary-version change;
+- in-place prefix rewrite discovered by whole-member audit;
+- implementation-version change with unchanged semantic output;
+- canonicalization and boundary-version change;
+- retained and purged supersession observations;
 - mixed corpus identities;
 - stale and unavailable source/index states;
 - `LIMIT=1` with an exact indexed population greater than one;
@@ -775,23 +957,31 @@ Stage 1 is conforming only when evidence establishes all of the following:
 
 1. taste_open, gateway, and Claude Code produce documented qualified identities
    under their versioned adapter rules.
-2. Byte-identical relocation preserves identity, while rewrite or boundary
-   change cannot silently reuse an old reference for different content.
-3. Every provider request and response names concrete corpus identifiers.
-4. With every requested index available, the Arango lexical provider returns
+2. Implementation-version changes with unchanged semantic output preserve
+   identity; canonicalization, boundary, or content changes cannot silently
+   reuse an old reference for different evidence.
+3. Byte-identical relocation preserves identity, and retained supersession
+   observations resolve old references without becoming source authority.
+4. Every provider request and response names concrete corpus identifiers and
+   preserves independently observable source and member standing.
+5. With every requested index available, the Arango lexical provider returns
    exact per-corpus and aggregate indexed-match counts independently of result
    `limit`; degraded partial scope cannot masquerade as an exact total.
-5. Source, index, freshness, and indexed-through standing remain separate.
-6. Stale or incomplete search remains usable only with visible standing.
-7. `open_episode()` verifies authoritative source content and digest.
-8. Missing or unavailable source content never falls back to a derived document
+6. Source-set, member-source, index, freshness, and indexed-through standing
+   remain separate.
+7. Stale, `tail_validated`, or incomplete search remains usable only with
+   visible standing and validation age.
+8. Whole-member integrity audits periodically establish `current` and expose
+   their O(source bytes) work and prefix-rewrite detection interval.
+9. `open_episode()` verifies authoritative source content and digest.
+10. Missing, malformed, or unavailable source content never falls back to a derived document
    presented as authoritative evidence.
-9. Automatic bounded reconciliation converges under observed source growth.
-10. Disable, unenroll, purge, and re-enroll preserve their declared distinctions
+11. Automatic bounded reconciliation converges under observed source growth.
+12. Disable, unenroll, purge, and re-enroll preserve their declared distinctions
     and never delete authoritative logs.
-11. Existing Arango operational cost and the added indexed data projection are
+13. Existing Arango operational cost and the added indexed data projection are
     reported explicitly.
-12. The Stage 1 suite and the existing qhaway and `llm-memory` suites pass.
+14. The Stage 1 suite and the existing qhaway and `llm-memory` suites pass.
 
 Passing Stage 1 does not establish semantic retrieval quality, federation,
 Codex support, or backend superiority.
@@ -831,6 +1021,9 @@ authority from this contract.
 
 - Gateway sources without native event identifiers cannot promise identity
   stability across insertion, deletion, or resegmentation.
+- Qualified references are deliberately long because they retain semantic
+  versions, an event token, and a full digest. Stage 3 must accommodate that
+  cost rather than invent a shorter reference with weaker offline integrity.
 - A canonical digest detects drift but does not prove the semantic correctness
   of an adapter's episode boundary.
 - Exact match count is exact for the indexed snapshot, not necessarily the
@@ -839,6 +1032,10 @@ authority from this contract.
   episode.
 - A source can be available while validation remains incomplete; availability
   is not freshness.
+- Whole-member integrity auditing is O(source bytes). An in-place prefix rewrite
+  that evades generation metadata may remain undetected until the next full
+  validation; `validated_at`, maximum validation age, and `tail_validated`
+  expose that interval.
 - Legacy `search` and `recall` tools remain temporarily accessible with weaker
   standing and are not suitable for new integrations.
 - Local enrollment protects against accidental scope expansion, not a hostile
