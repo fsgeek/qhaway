@@ -335,7 +335,7 @@ The independent review at
 `docs/superpowers/specs/2026-07-13-ayllu-stage-1-implementation-review.md`
 identified two blocking, nine major, and ten minor implementation findings at
 `5e6be56`. Repaired llm-memory endpoint
-`c3ec1a246cfc0b841daa0b1c84798073d1c704d1` closes the findings that could
+`c601e66a2677840ab6eb5a3d74b389f5d23aee34` closes the findings that could
 invalidate Stage 1 standing. The focused contract architecture and authority
 boundary did not require revision.
 
@@ -371,8 +371,8 @@ boundary did not require revision.
   Pre-search reconciliation remains bounded. Direct `reconcile_member()` now
   performs the same expired-audit demotion before exhausted work can preserve a
   stale current claim.
-- **Gate 14 remains evidenced.** The affected Stage 1 slice passed `222` tests
-  in `29.93s`; the complete llm-memory suite passed `236` tests in `30.26s`;
+- **Gate 14 remains evidenced.** The affected Stage 1 slice passed `223` tests
+  in `31.56s`; the complete llm-memory suite passed `237` tests in `30.17s`;
   the qhaway companion suite passed `137` tests in `13.61s`. Contract episodes,
   source states, and supersessions each counted zero after verification. Both
   full ranges passed `git diff --check`. The original llm-memory checkout still
