@@ -35,10 +35,10 @@ symlink was used for evaluation and was not committed.
 
 | Evidence | Result | Interpretation |
 |---|---|---|
-| Evaluation runner | `2 passed in 0.38s` | Atomic JSON output retained digests, counts, standing, work, timing, index growth, purge evidence, and limitations; fixture markers for source lines, content, identifiers, credentials, locators, and raw references were absent |
+| Evaluation runner | `2 passed in 0.36s` | Atomic JSON output retained digests, counts, standing, work, timing, index growth, purge evidence, and limitations; fixture markers for source lines, content, identifiers, credentials, locators, and raw references were absent |
 | Focused Stage 1 slice | `164 passed in 11.07s` | Identity, enrollment, adapters, contract index, reconciliation, search, opening, lifecycle, MCP, and journey behavior passed together |
 | Complete `llm-memory` suite at `0799d7e` | `180 passed in 9.37s` | All original and Stage 1 implementation assertions passed |
-| Complete qhaway suite at the evidence parent | `137 passed in 12.65s` | Existing curated-memory behavior remained green |
+| Complete qhaway suite at the evidence parent | `137 passed in 12.31s` | Existing curated-memory behavior remained green |
 | Arango cleanup | Contract episodes `0`; reconciliation states `0`; supersessions `0` for the evaluation corpus after purge | The test corpus left no derived documents |
 | Source immutability | Synthetic source SHA-256 was identical before and after the journey and purge | Derived lifecycle operations did not modify the authoritative source |
 
@@ -46,6 +46,10 @@ The runner writes a same-directory temporary file, flushes and fsyncs it, and
 uses `os.replace`. Purge is absent by default, requires the explicit
 `--purge-test-corpus` flag, and rejects every corpus identifier that does not
 begin with `test-` before reconciliation or database mutation.
+
+The qhaway timing cited in the table is the clean precommit run. A separate
+preliminary clean run reported 137 passed in 12.65s; it is not the timing used
+for the committed evidence row.
 
 ## Synthetic Journey
 
@@ -59,12 +63,12 @@ included here.
 |---|---|
 | Query bound | `limit=1`; query represented only by SHA-256 and length |
 | Result and population | 1 returned; 2 indexed matches; total standing `exact` |
-| Per-member standing | Source `available`; index `available`; freshness `current`; validation age recorded (`0.163s` in this run) |
-| Reconciliation | 984 bytes; 70.327ms; not exhausted; the immediately following automatic pre-search reconciliation read 0 additional bytes |
-| Search plus count | 75.838ms for the provider's combined search-and-count AQL request |
-| Standalone count latency | Unavailable and declared `combined_with_search`; it is not manufactured from the combined timing |
+| Per-member standing | Source `available`; index `available`; freshness `current`; validation age recorded (`0.165s` in this run) |
+| Preflight reconciliation | 984 bytes; 69.627ms; not exhausted; measured separately from the public search operation |
+| Automatic reconciliation plus search/count operation | 77.257ms inclusive of the automatic pre-search reconciliation and provider search/count work; the automatic reconciliation read 0 bytes in this run because preflight was current |
+| Provider search/count query latency | Unavailable and declared `unavailable_not_instrumented`; it is not manufactured from the inclusive operation timing |
 | Exact opening | Expected-reference digest matched; standing `available`; authoritative content digest retained; content omitted |
-| Additional indexed projection | 2 documents; 2,018 serialized AQL-representation bytes |
+| Additional indexed projection | 2 documents; 2,046 serialized AQL-representation bytes |
 | Selective purge | Episodes 2; reconciliation 1; supersessions 0 |
 | Post-purge standing | All three contract collections contained zero documents for the test corpus |
 
@@ -155,7 +159,7 @@ database configuration, collection and view administration privileges, three
 contract collections, the `episodic_contract_search` ArangoSearch view, the
 `text_en` analyzer, and permission to reconcile derived state before search.
 It also retains active and sometimes staging generations during crash-safe
-replacement. These are operational costs separate from the 2-document / 2,018
+replacement. These are operational costs separate from the 2-document / 2,046
 byte synthetic projection measurement.
 
 No credential is included in the runner output or this record. This stage did
@@ -188,7 +192,9 @@ These dimensions are independent. No aggregate score is calculated.
 - Snippets and match attribution are bounded heuristic projections, not
   authoritative source opening.
 - Exact counts describe the available indexed population. Degraded scope is
-  `unknown`, and result-plus-count timing is combined in the current provider.
+  `unknown`. Search and count share a provider request, but that request's
+  isolated latency is unavailable because the measured public operation also
+  includes automatic reconciliation.
 - Evaluation output deliberately removes content, raw lines, query text,
   identifiers, locators, timestamps, credentials, and raw qualified references.
 - Codex support, federation, bilateral withdrawal, cross-project authorization,
@@ -212,7 +218,7 @@ These dimensions are independent. No aggregate score is calculated.
 | 10 | Evidenced | Negative opening standings expose no derived fallback or content |
 | 11 | Evidenced | Automatic pre-search reconciliation and repeated bounded synthetic growth converge to `current` |
 | 12 | Evidenced | Disable, unenroll, selective purge, and re-enroll distinctions preserve source bytes |
-| 13 | Evidenced | Arango dependencies and measured additional 2-document / 2,018-byte projection reported separately |
+| 13 | Evidenced | Arango dependencies and measured additional 2-document / 2,046-byte projection reported separately |
 | 14 | Evidenced | `llm-memory` 180 passed; qhaway 137 passed; focused Stage 1 slice 164 passed |
 
 All fourteen gates have implementation evidence. Gate 11 is limited to
