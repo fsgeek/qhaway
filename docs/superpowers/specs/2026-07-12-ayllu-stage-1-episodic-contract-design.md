@@ -1036,6 +1036,13 @@ authority from this contract.
   that evades generation metadata may remain undetected until the next full
   validation; `validated_at`, maximum validation age, and `tail_validated`
   expose that interval.
+- Bounded implementation-compatibility audits treat same-inode monotonic growth
+  beyond their fixed trusted prefix end as append-only. A writer that mutates
+  already-scanned prefix bytes in place and appends before the next observation
+  can evade that classification; such writers require append-only discipline,
+  atomic replacement, coordination, or filesystem snapshots. This exception
+  does not weaken ordinary whole-member audits, which still require an unchanged
+  generation snapshot and restart when it changes.
 - Legacy `search` and `recall` tools remain temporarily accessible with weaker
   standing and are not suitable for new integrations.
 - Local enrollment protects against accidental scope expansion, not a hostile
