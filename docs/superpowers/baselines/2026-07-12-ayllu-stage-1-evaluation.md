@@ -10,7 +10,7 @@
 
 | Surface | Reviewed revision | Standing |
 |---|---|---|
-| `llm-memory` Stage 1 | `e95e32fbc739a4f5d3e21131b506472214346ce2..0799d7e6b1327da1392f894e027ff52df93bace4` | Isolated worktree on `feature/ayllu-stage1-contract`; clean after the evaluation commit |
+| `llm-memory` Stage 1 | `e95e32fbc739a4f5d3e21131b506472214346ce2..ea4e3ae3dc54b1cb66451ec8381e02439ffe7f4d` | Isolated worktree on `feature/ayllu-stage1-contract`; clean after the timing-evidence correction commit |
 | qhaway evidence parent | `c8c016352457380cf647a7a20ae8a3fed7b7497a` | Clean on `design/ayllu-stage-1-episodic-contract` before this record |
 | ArangoDB | Locally configured service, contract collections, and ArangoSearch view reachable | Used only for implementation tests and the synthetic evaluation corpus |
 
@@ -35,9 +35,9 @@ symlink was used for evaluation and was not committed.
 
 | Evidence | Result | Interpretation |
 |---|---|---|
-| Evaluation runner | `2 passed in 0.36s` | Atomic JSON output retained digests, counts, standing, work, timing, index growth, purge evidence, and limitations; fixture markers for source lines, content, identifiers, credentials, locators, and raw references were absent |
-| Focused Stage 1 slice | `164 passed in 11.07s` | Identity, enrollment, adapters, contract index, reconciliation, search, opening, lifecycle, MCP, and journey behavior passed together |
-| Complete `llm-memory` suite at `0799d7e` | `180 passed in 9.37s` | All original and Stage 1 implementation assertions passed |
+| Corrected evaluation runner at `ea4e3ae` | `2 passed in 0.36s` | The focused journey output test passed with inclusive operation timing and unavailable isolated provider-query timing; atomic redaction, counts, standing, work, index growth, purge evidence, and limitations remained covered |
+| Historical focused Stage 1 slice at `0799d7e` | `164 passed in 11.07s` | Pre-correction identity, enrollment, adapters, contract index, reconciliation, search, opening, lifecycle, MCP, and journey behavior passed together; this row is not attributed to the corrected endpoint |
+| Complete `llm-memory` suite at `ea4e3ae` | `180 passed in 8.69s` | All original and Stage 1 assertions, including the corrected journey timing evidence, passed at the reviewed endpoint |
 | Complete qhaway suite at the evidence parent | `137 passed in 12.31s` | Existing curated-memory behavior remained green |
 | Arango cleanup | Contract episodes `0`; reconciliation states `0`; supersessions `0` for the evaluation corpus after purge | The test corpus left no derived documents |
 | Source immutability | Synthetic source SHA-256 was identical before and after the journey and purge | Derived lifecycle operations did not modify the authoritative source |
