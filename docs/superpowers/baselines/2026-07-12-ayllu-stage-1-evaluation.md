@@ -1,9 +1,9 @@
 # Ayllu Stage 1 Episodic Contract Evaluation
 
-**Umbrella:** `docs/superpowers/specs/2026-07-10-qhaway-ayllu-memory-design.md`  
-**Focused specification:** `docs/superpowers/specs/2026-07-12-ayllu-stage-1-episodic-contract-design.md`  
-**Plan:** `docs/superpowers/plans/2026-07-12-ayllu-stage-1-episodic-contract.md`  
-**Observed:** 2026-07-12  
+**Umbrella:** `docs/superpowers/specs/2026-07-10-qhaway-ayllu-memory-design.md`
+**Focused specification:** `docs/superpowers/specs/2026-07-12-ayllu-stage-1-episodic-contract-design.md`
+**Plan:** `docs/superpowers/plans/2026-07-12-ayllu-stage-1-episodic-contract.md`
+**Observed:** 2026-07-12
 **Boundary:** Stage 1 contract evidence only; no backend selection or Stage 2 implementation
 
 ## Revisions and Evidence Classes
