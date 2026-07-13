@@ -237,7 +237,12 @@ decoded properties `source_id`, `native_session_id`,
 
 Encode tuple components as unpadded URL-safe base64 joined by `.`. `EpisodeReference.build()` encodes `(source_id, native_session_id)` into `session_id` and `(canonicalization_version, boundary_version, event_token, full_sha256_digest)` into `episode_id`. `EpisodeReference.parse()` must require scheme `episode`, exactly two path segments, four decoded episode components, positive integer semantic versions, and a 64-character lowercase hexadecimal digest.
 
-`SearchRequest.create()` strips and validates a non-empty query, rejects bool limits, enforces `1..100`, rejects empty/duplicate corpora and `*`/`all`, and defaults strategy to `STRATEGY`.
+`SearchRequest` carries `contract_version` as a final field defaulting to
+`CONTRACT_VERSION`, preserving the existing positional field order. Its
+`create()` factory accepts `contract_version` as a keyword, rejects booleans
+and every value other than integer `1`, strips and validates a non-empty query,
+rejects bool limits, enforces `1..100`, rejects empty/duplicate corpora and
+`*`/`all`, and defaults strategy to `STRATEGY`.
 
 `ProviderCapabilities.as_dict()` returns exactly:
 
