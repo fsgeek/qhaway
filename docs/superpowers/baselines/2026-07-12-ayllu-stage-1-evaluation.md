@@ -328,3 +328,71 @@ the authoritative synthetic source.
 consider a Stage 2 peer-backend comparison. Real-source retrieval quality,
 provider resource amplification, startup reconciliation, bounded opening, and
 backend selection remain unestablished and are not authorized by this record.
+
+## 2026-07-13 Independent Implementation Review Repair Addendum
+
+The independent review at
+`docs/superpowers/specs/2026-07-13-ayllu-stage-1-implementation-review.md`
+identified two blocking, nine major, and ten minor implementation findings at
+`5e6be56`. Repaired llm-memory endpoint
+`c3ec1a246cfc0b841daa0b1c84798073d1c704d1` closes the findings that could
+invalidate Stage 1 standing. The focused contract architecture and authority
+boundary did not require revision.
+
+- **Gate 2 remains evidenced.** Duplicate references with different source
+  positions now become positioned malformed-source failures instead of
+  uncaught generation-document errors. Replace builds cannot activate after a
+  source becomes missing, malformed, incomplete, or shorter than its accepted
+  end; the complete active generation remains available with degraded source
+  standing. A malformed record does not advance the accepted cursor. Audits
+  compare reference and byte-position triples, so content-equivalent byte
+  shifts cannot certify stale opening positions.
+- **Gate 5 remains evidenced.** Search selects active, fully backed,
+  integrity-valid generations inside the same AQL request that computes
+  results and counts. There is no state-read/query TOCTOU interval. When any
+  member index in a corpus is unavailable, per-corpus `indexed_matches` and
+  aggregate `total_matches` are JSON `null` with `unknown` standing; returned
+  defensible hits do not manufacture a zero or an exact population.
+- **Gate 7 remains evidenced.** Build and tail observations persist only
+  `incomplete`, `stale`, `unknown`, `unavailable`, or `tail_validated`; only a
+  completed whole-member audit publishes `current`. Activation conflict cannot
+  leave a tail-only observation current. Shrink is stale, and bytes observed
+  beyond an audited end but not yet parsed are incomplete rather than
+  tail-validated.
+- **Gate 8 remains evidenced.** Eight concurrent generation writers with
+  independent Arango handles reproduced unique error 1210 before repair, and
+  eight concurrent reconcilers reproduced write/write error 1200. Publication
+  now accepts only identical deterministic insert winners and translates 1200
+  or 1210 at state/generation boundaries into retryable contract conflicts.
+  Live parallel tests and all prior crash/CAS tests pass.
+- **Gate 11 remains evidenced.** FastMCP lifespan performs one bounded startup
+  reconciliation when enrollment configuration exists. Missing configuration
+  leaves the legacy service loadable and does not pretend contract enrollment.
+  Pre-search reconciliation remains bounded. Direct `reconcile_member()` now
+  performs the same expired-audit demotion before exhausted work can preserve a
+  stale current claim.
+- **Gate 14 remains evidenced.** The affected Stage 1 slice passed `222` tests
+  in `29.93s`; the complete llm-memory suite passed `236` tests in `30.26s`;
+  the qhaway companion suite passed `137` tests in `13.61s`. Contract episodes,
+  source states, and supersessions each counted zero after verification. Both
+  full ranges passed `git diff --check`. The original llm-memory checkout still
+  contains only its owner-controlled `pyproject.toml` and `uv.lock` changes at
+  the unchanged combined diff digest
+  `9fef9719b4cb9e426750097cb41e21c4f365490f6ef0d112c5e3cc526f094792`.
+
+Findings I-1 through I-6, I-8 through I-11, and I-13 through I-21 are repaired
+and regression-tested. I-12 is deferred without exposure: all installed
+adapters reject semantic versions other than `(1, 1)`, and enabling a later
+version is gated on opening historical references with their recorded
+algorithm. I-7 is partly a measured implementation cost, not a correctness
+claim: backing checks use counts, audit chunks use position-bounded reads,
+append seeding occurs server-side, and routine append finalization avoids full
+supersession scans, but immutable Arango generation cloning remains O(active
+generation documents). `WorkBudget` meters authoritative source bytes and does
+not mislabel that database work as byte-bounded. Stage 2 must compare this cost
+against the peer backend.
+
+**Active implementation decision: continue.** Stage 1 is mergeable after broad
+final review. This continues to authorize consideration of a Stage 2 peer
+backend comparison only; it does not authorize real-corpus enrollment, choose a
+backend, or establish retrieval usefulness.

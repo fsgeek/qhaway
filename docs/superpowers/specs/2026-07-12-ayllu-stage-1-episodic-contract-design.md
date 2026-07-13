@@ -523,7 +523,9 @@ For the Stage 1 Arango strategy, every available corpus also reports its exact
 indexed match count. The response-level `total_matches` is the sum across the
 concrete corpus scope. A corpus with an unavailable index reports no fabricated
 zero; its `match_standing` is `unknown`, and the aggregate total cannot be
-`exact`.
+`exact`. In the version 1 JSON shape, its `indexed_matches` and the aggregate
+`total_matches` are `null` when their respective scopes are unknown. Available
+results may still be returned with their member standing.
 
 ### Match population
 
@@ -690,6 +692,13 @@ runs automatically:
 It receives a bounded work allowance. Stage 1 does not require a daemon. Work
 that cannot complete within the allowance leaves explicit stale, incomplete,
 or unknown standing and resumes at the next supported opportunity.
+
+The allowance meters bytes read from authoritative sources. It does not claim
+to bound database document work. The Arango implementation uses count and
+source-position queries for routine validation and performs append-generation
+cloning inside Arango rather than materializing bodies in the provider, but an
+immutable append generation still copies O(active generation documents). That
+cost is a Stage 2 backend-comparison input, not hidden source-byte work.
 
 Routine correctness does not depend on a human ingestion command. A diagnostic
 or explicit reconciliation command may exist, but it is not the normal route
@@ -1036,6 +1045,14 @@ authority from this contract.
   that evades generation metadata may remain undetected until the next full
   validation; `validated_at`, maximum validation age, and `tail_validated`
   expose that interval.
+- The installed Stage 1 adapters implement only canonicalization/boundary pair
+  `(1, 1)` and reject other declarations. Enabling a later semantic version
+  requires `open_episode()` to resolve and execute the version recorded in an
+  old reference before that new version can be considered compatible.
+- Arango append reconciliation creates an immutable replacement generation.
+  Server-side cloning avoids transferring full bodies through Python, but the
+  clone remains O(active generation documents) database work outside the
+  source-byte allowance and must be measured in the Stage 2 peer comparison.
 - Bounded implementation-compatibility audits treat same-inode monotonic growth
   beyond their fixed trusted prefix end as append-only. A writer that mutates
   already-scanned prefix bytes in place and appends before the next observation
