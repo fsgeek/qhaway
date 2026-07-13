@@ -10,7 +10,7 @@
 
 | Surface | Reviewed revision | Standing |
 |---|---|---|
-| `llm-memory` Stage 1 | `e95e32fbc739a4f5d3e21131b506472214346ce2..ea4e3ae3dc54b1cb66451ec8381e02439ffe7f4d` | Isolated worktree on `feature/ayllu-stage1-contract`; clean after the timing-evidence correction commit |
+| `llm-memory` Stage 1 | `e95e32fbc739a4f5d3e21131b506472214346ce2..d569fe8545b8836bfd885a584cbd5d43d4147d8b` | Isolated worktree on `feature/ayllu-stage1-contract`; includes the final reconciliation-invariant repair |
 | qhaway evidence parent | `c8c016352457380cf647a7a20ae8a3fed7b7497a` | Clean on `design/ayllu-stage-1-episodic-contract` before this record |
 | ArangoDB | Locally configured service, contract collections, and ArangoSearch view reachable | Used only for implementation tests and the synthetic evaluation corpus |
 
@@ -39,6 +39,8 @@ symlink was used for evaluation and was not committed.
 | Historical focused Stage 1 slice at `0799d7e` | `164 passed in 11.07s` | Pre-correction identity, enrollment, adapters, contract index, reconciliation, search, opening, lifecycle, MCP, and journey behavior passed together; this row is not attributed to the corrected endpoint |
 | Complete `llm-memory` suite at `ea4e3ae` | `180 passed in 8.69s` | All original and Stage 1 assertions, including the corrected journey timing evidence, passed at the reviewed endpoint |
 | Complete qhaway suite at the evidence parent | `137 passed in 12.31s` | Existing curated-memory behavior remained green |
+| Final reconciliation repair suite at `d569fe8` | `191 passed in 11.46s` | Focused regressions and the complete `llm-memory` suite passed after compatibility, derived-loss, CAS, and identifier repairs |
+| Final qhaway validation before repair-addendum commit | `137 passed in 12.00s` | Existing curated-memory behavior remained green with the repaired Stage 1 evidence record |
 | Arango cleanup | Contract episodes `0`; reconciliation states `0`; supersessions `0` for the evaluation corpus after purge | The test corpus left no derived documents |
 | Source immutability | Synthetic source SHA-256 was identical before and after the journey and purge | Derived lifecycle operations did not modify the authoritative source |
 
@@ -207,13 +209,13 @@ These dimensions are independent. No aggregate score is calculated.
 | Gate | Standing | Evidence |
 |---:|---|---|
 | 1 | Evidenced | Taste Open, gateway, and Claude Code documented identity tests |
-| 2 | Evidenced | Implementation release preserves identity; content and semantic-version perturbations churn or supersede it |
+| 2 | Evidenced | Compatible implementation-only audits preserve active references and provenance; incompatible canonical output is quarantined until a semantic-version change permits replacement |
 | 3 | Evidenced | Byte-identical relocation and retained source-verified supersession tests |
 | 4 | Evidenced | Versioned requests/responses require concrete corpora and retain source/member standing |
-| 5 | Evidenced | Limit-independent exact aggregate/per-corpus counts; degraded index standing becomes `unknown` |
+| 5 | Evidenced | Limit-independent exact aggregate/per-corpus counts; incompatible or unbacked active generations make index and population standing `unknown`, while an available empty source remains exact-empty |
 | 6 | Evidenced | Source set, member source, index, freshness, and indexed-through fields tested separately |
 | 7 | Evidenced | Stale, `tail_validated`, and incomplete indexes remain usable only with visible age/standing |
-| 8 | Evidenced | Resumable full-member audit, O(source bytes) work, restart, chain/count comparison, and prefix-rewrite tests |
+| 8 | Evidenced | Resumable full-member audit, O(source bytes) work, restart, chain/count comparison, derived-loss rebuilding, and revision/generation/cursor CAS interleaving tests |
 | 9 | Evidenced | Expected-reference opening re-reads source and verifies content digest |
 | 10 | Evidenced | Negative opening standings expose no derived fallback or content |
 | 11 | Evidenced | Automatic pre-search reconciliation and repeated bounded synthetic growth converge to `current` |
@@ -237,3 +239,49 @@ measurable, reviewable contract but retains meaningful service, indexing,
 reconciliation, and removal costs. This decision authorizes consideration of
 that comparison only. It does not establish semantic retrieval quality, select
 a backend, or authorize Stage 2 implementation automatically.
+
+## 2026-07-12 Final Review Repair Addendum
+
+Revision `d569fe8545b8836bfd885a584cbd5d43d4147d8b` repairs the final
+whole-branch review findings without widening Stage 1 startup, scan, or opening
+scope.
+
+- **Gate 2 remains evidenced.** An implementation-version audit whose
+  canonical identities change under unchanged semantic versions now preserves
+  the old active generation and references, reports the member index
+  unavailable, and records implementation incompatibility. Repeated audits do
+  not replace it. A canonicalization- or boundary-version change is required
+  before changed output can activate. A compatible implementation-only audit
+  retains the active generation, current standing, and provenance version.
+- **Gate 5 remains evidenced.** Availability now requires the stored active
+  generation population to equal its recorded episode count. Episode-only
+  derived purge is rebuilt before exact search is reported; otherwise index and
+  total standing remain unknown. A missing, unavailable, or wholly malformed
+  initial source cannot activate a phantom empty generation, while an
+  available empty source can still establish exact-empty standing.
+- **Gate 8 remains evidenced.** Audit and build transitions use guarded
+  compare-and-set updates tied to the state revision, active/build generation,
+  and build cursor. Deterministic interleaving tests show stale audit evidence
+  cannot certify a competing activation and stale build work cannot overwrite
+  competing progress. Failed guards defer work instead of publishing stale
+  freshness.
+
+The repair suite passed `191` tests in `11.46s`; the qhaway companion suite
+passed `137` tests in `12.00s`. Test-derived Arango rows were zero afterward in
+the episodes, source-state, and supersession collections. The original
+`llm-memory` worktree remained limited to its two pre-existing dependency files
+with diff digest
+`9fef9719b4cb9e426750097cb41e21c4f365490f6ef0d112c5e3cc526f094792`.
+
+Task 12's concrete synthetic source immutability evidence is incorporated as
+digests:
+`source_before_sha256=cf10468e288be56a717631e3e261171641b75f08cafa8c06158e6fc0d56d6bf3`
+and
+`source_after_sha256=cf10468e288be56a717631e3e261171641b75f08cafa8c06158e6fc0d56d6bf3`.
+Their equality establishes that the measured journey and purge did not alter
+the authoritative synthetic source.
+
+**Revised decision: continue.** The repaired gates support proceeding to
+consider a Stage 2 peer-backend comparison. Real-source retrieval quality,
+provider resource amplification, startup reconciliation, bounded opening, and
+backend selection remain unestablished and are not authorized by this record.
