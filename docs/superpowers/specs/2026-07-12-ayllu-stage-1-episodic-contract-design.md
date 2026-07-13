@@ -1,7 +1,7 @@
 # Ayllu Stage 1 Episodic Contract
 
 **Date:** 2026-07-12
-**Status:** Approved conceptual design; written specification awaiting review
+**Status:** Approved focused specification; implementation requires an approved plan
 **Umbrella:** `docs/superpowers/specs/2026-07-10-qhaway-ayllu-memory-design.md`
 **Stage 0 evidence:** `docs/superpowers/baselines/2026-07-10-ayllu-stage-0-baseline.md`
 **Scope:** Stable episode identity, explicit bounded lexical search, freshness and
