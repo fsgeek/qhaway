@@ -10,7 +10,8 @@ and the evidence record
 **Reviewer:** Claude (Fable 5, qhaway session), with three parallel review
 agents (reconciler/index, adapters/enrollment, evidence-integrity audit); both
 blocking findings verified directly by the reviewer at the cited lines
-**Status:** Completed review; verdict below
+**Status:** Round closed 2026-07-13; repairs at `55558d8` verified (see Repair
+verification addendum). Mergeable, with one recording action.
 
 ## Verdict
 
@@ -237,3 +238,79 @@ not yet earn contact with a real corpus.
   declared limitations at the author's judgment.
 - Re-run the evaluation's affected rows after repair and append an addendum,
   as the prior repair addendum did.
+
+## Repair verification addendum (2026-07-13, endpoint `55558d8`)
+
+Verification method: both suites re-run independently at the repaired endpoint
+(**237 llm-memory / 137 qhaway, passed**); the two blocking repairs and five
+others verified directly by the reviewer at the cited lines; the remaining
+twelve claims adversarially verified by an agent that additionally ran the new
+regression tests against pre-repair base `5e6be56` in a throwaway worktree to
+confirm they pin the repairs, and reproduced the live parallel-writer errors
+(1210 deterministically, 1200 probabilistically) at base.
+
+### Per-finding verdicts
+
+- **I-1 through I-6, I-8 through I-11, I-13 through I-21: repaired and
+  regression-tested.** Each repair has a fixture encoding the review's failure
+  scenario; the load-bearing fixtures fail at base and pass at the endpoint.
+  Highlights: mid-build state can no longer persist `current` under any
+  standing ladder branch; duplicate references become positioned
+  malformed-source standing via a typed conflict; mid-record truncation now
+  reaches `stale` and rebuild; audits compare content-addressed
+  reference/byte-position triples; parallel Arango races (8 threads,
+  independent connections) translate 1200/1210 into retryable contract
+  conflicts; unavailable indexes report `null` counts (spec amended for the
+  version 1 JSON shape); search generation-selection moved into the single
+  search AQL request, eliminating the Python-interval TOCTOU; FastMCP lifespan
+  performs one bounded startup reconciliation.
+- **I-7: partially repaired, remainder declared.** Backing checks are counts,
+  audit reads are position-bounded, append seeding is server-side; the
+  immutable append-generation clone remains O(active generation documents) and
+  is now declared in the spec as a Stage 2 comparison input rather than hidden
+  behind the source-byte allowance. Accepted.
+- **I-12: deferred defensibly.** All installed adapters now reject semantic
+  version pairs other than (1, 1) (`adapter_versions.py`), so the
+  recorded-version opening gap cannot be exercised; the spec records that
+  enabling a later version requires recorded-version opening first.
+
+### Residuals (non-blocking)
+
+- **V-1 (record before merge, or bump `implementation_version`):** the
+  typed-field repairs changed which records parse versus raise — bool/float
+  `cycle`, non-string `timestamp`/`model`/`user_message`, falsy non-string
+  `raw_output.response`, non-dict `state` — under frozen canonicalization,
+  boundary, AND implementation versions. Records parsing under both versions
+  keep identical digests, but boundary records flip from indexed episodes to
+  positioned malformed, and because `implementation_version` was not bumped,
+  the compatibility-audit machinery built for exactly this transition will
+  classify it as source staleness instead. Consequence-free today (verified
+  zero persisted contract documents; degradation is honest), but it is the one
+  place the repair round bypassed its own versioning discipline. One recorded
+  paragraph or a version bump closes it. Becomes major the moment a real
+  corpus is enrolled before it is recorded.
+- **V-2 (documentation nit):** the repair plan says a non-directory Claude
+  Code locator returns an empty member tuple; the implementation returns empty
+  only for a missing locator and still yields a single file member for an
+  existing non-directory path. The finding's harm (phantom member for a
+  vanished directory) is closed; the plan/implementation mismatch is
+  undocumented.
+- **V-3 (evidence-class notes):** I-18's regression pin is mock-level (a live
+  TOCTOU test is impractical; the in-query design argument is sound);
+  the parallel-reconcilers race test is probabilistic at base; empty Claude
+  Code files remain `malformed` by documented deliberate choice while
+  taste/gateway report empty as available — divergence retained and
+  plan-recorded.
+- **V-4 (low, self-healing):** `seed_generation`'s episode upserts commit even
+  when the ownership CAS matches nothing (orphan clones in an abandoned
+  generation, deterministic keys, cleaned by the next build); a pure
+  writer-race document conflict is transiently persisted as `malformed` for an
+  intact file until the next reconcile rebuilds.
+
+### Round verdict
+
+**Mergeable to llm-memory main after V-1 is recorded** (one paragraph in the
+spec's declared losses or the repair plan, or an `implementation_version`
+bump — author's choice). Real-corpus enrollment remains a separate,
+explicitly unauthorized decision, per the evaluation addendum, and should get
+its own go/no-go after merge. The review round is closed.
