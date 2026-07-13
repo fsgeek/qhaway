@@ -589,10 +589,22 @@ git commit -m "feat: add isolated episodic contract index"
 **Files:**
 - Create: `/home/tony/projects/llm-memory/llm_memory/reconcile.py`
 - Create: `/home/tony/projects/llm-memory/tests/test_reconcile.py`
+- Modify: `/home/tony/projects/llm-memory/llm_memory/adapters.py`
+- Modify: `/home/tony/projects/llm-memory/tests/test_adapters.py`
 
 **Interfaces:**
 - Produces: `WorkBudget`, `ReconcileReport`, `reconcile_registry(db, registry, budget)`, `reconcile_source(db, enrollment, budget)`, and source/member standing dictionaries consumed by search.
+- Produces: resumable `ScanCursor` and `MemberChunk` adapter reads while preserving whole-member `scan()` as a compatibility wrapper.
 - Consumes: enrollment, adapters, and generation storage.
+
+**Plan correction discovered during execution:** The Task 4 whole-member
+`scan()` interface cannot enforce a physical work bound or resume boundary state.
+Task 6 therefore extends adapters with
+`scan_chunk(enrollment, member, cursor, max_bytes)`. Cursor adapter state retains
+gateway session sequences and Claude session/last-user context. JSONL records
+are atomic: a single record may exceed the scheduling allowance, but actual
+bytes and the one-record overshoot are reported rather than hidden through
+logical metering.
 
 - [ ] **Step 1: Write reconciliation perturbation tests**
 
@@ -612,6 +624,11 @@ Use temporary JSONL plus unique Arango corpus IDs. Cover:
 12. implementation-version change with unchanged canonical output preserves references;
 13. canonicalization- or boundary-version change creates new references and supersession observations; and
 14. a previously indexed member that vanishes remains visible with missing or unavailable standing until purge.
+
+Adapter regression tests additionally prove that chunked scans equal whole
+scans, cursor boundary state survives between chunks, `bytes_read` reflects
+physical input, and one oversized complete record makes progress with a declared
+overshoot.
 
 - [ ] **Step 2: Run reconciliation tests to verify failure**
 
@@ -646,6 +663,19 @@ def reconcile_registry(db, registry: EnrollmentRegistry, budget: WorkBudget) -> 
 def reconcile_source(db, enrollment: SourceEnrollment, budget: WorkBudget) -> tuple[dict, ...]: ...
 def reconcile_member(db, enrollment: SourceEnrollment, member: SourceMember, budget: WorkBudget) -> dict: ...
 ```
+
+Use these adapter shapes:
+
+```text
+ScanCursor(byte_offset: int, adapter_state: dict)
+MemberChunk(member, episodes, next_cursor, observed_end, complete_end,
+            source_standing, freshness, bytes_read, exhausted,
+            error_position=None)
+SourceAdapter.scan_chunk(enrollment, member, cursor, max_bytes) -> MemberChunk
+```
+
+`SourceAdapter.scan()` loops `scan_chunk()` to completion; reconciliation calls
+only the chunked interface.
 
 - [ ] **Step 4: Implement resumable integrity chain**
 
