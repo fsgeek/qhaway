@@ -460,7 +460,7 @@ succeeds.
 
 - [ ] **Step 4: Implement the three boundary algorithms**
 
-Use the approved canonical body fields. Taste_open excludes `_activity_log` from `state_text` but retains it in `activity_log`. Gateway retains `messages_full` in `adapter_fields` and selects the last user message. Claude retains the most recent user prose and emits one episode per prose-bearing assistant event. Adapter `members()` returns one member for file locators; Claude directory locators return sorted `*.jsonl` files, with `member_id` taken from the first valid source `sessionId` and a visible malformed result when no session can be established.
+Use the approved canonical body fields. Taste_open excludes `_activity_log` from `state_text` but retains it in `activity_log`. Gateway retains `messages_full` in `adapter_fields` and selects the last user message. Claude retains the most recent user prose and emits one episode per prose-bearing assistant event. Adapter `members()` returns one member for file locators; Claude directory locators return sorted `*.jsonl` files. To avoid unbounded, uncharged discovery reads, each Claude member uses a stable operational ID derived from the source-set-relative filename. Episode identity still uses the source-native `sessionId`, never that operational member ID.
 
 Every adapter calls `build_identity()` with enrollment semantic versions. No adapter reads or embeds `implementation_version` in identity.
 
@@ -552,6 +552,12 @@ The view indexes `user_message`, `response`, and `state_text` with `text_en`. A 
 
 Write a complete generation under a new `generation_id`, then update one source-state document to activate it. Search filters against active generation IDs obtained before query execution. Delete old generations only after activation; a crash may leave inert staging documents but cannot expose them as current.
 
+Generation document writes and staging-state patches are idempotent. Retrying
+after a crash may overwrite an identical deterministic generation document but
+must reject conflicting content. Injected-failure tests cover crashes after
+document insert, before staged count/cursor persistence, and during generation
+seeding.
+
 Implement these public signatures:
 
 ```python
@@ -624,6 +630,12 @@ Use temporary JSONL plus unique Arango corpus IDs. Cover:
 12. implementation-version change with unchanged canonical output preserves references;
 13. canonicalization- or boundary-version change creates new references and supersession observations; and
 14. a previously indexed member that vanishes remains visible with missing or unavailable standing until purge.
+15. truncation, unavailable source, and malformed source cannot certify stale active episodes as current;
+16. audit completion compares the full ordered active-generation reference chain and count;
+17. a semantic version change during a bounded build discards and restarts that staging generation;
+18. blank complete lines advance the physical cursor under small budgets;
+19. supersession finalization resumes idempotently after activation-time failure; and
+20. gateway supersessions match native session plus session-local event token.
 
 Adapter regression tests additionally prove that chunked scans equal whole
 scans, cursor boundary state survives between chunks, `bytes_read` reflects
