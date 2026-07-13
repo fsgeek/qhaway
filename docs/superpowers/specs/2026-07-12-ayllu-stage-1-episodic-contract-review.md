@@ -4,7 +4,7 @@
 **Target Spec:** [2026-07-12-ayllu-stage-1-episodic-contract-design.md](2026-07-12-ayllu-stage-1-episodic-contract-design.md)
 **Reviewed Against:** [2026-07-10-qhaway-ayllu-memory-design.md](2026-07-10-qhaway-ayllu-memory-design.md) (umbrella), `docs/superpowers/baselines/2026-07-10-ayllu-stage-0-baseline.md`
 **Reviewer:** Claude (Fable 5, qhaway session)
-**Status:** Completed review; findings E-1 through E-3 should close before the spec's status advances past "awaiting review"
+**Status:** Round closed 2026-07-12; all findings resolved in `9a6153a` (see Closure)
 
 ## Verdict
 
@@ -170,3 +170,49 @@ be set that the draft delivers the foundation, not the capability.
 - **E-4:** requires a recorded decision (accepted churn is a valid outcome).
 - **E-5:** editorial fix.
 - **E-6 through E-9:** acknowledge or absorb at the author's discretion.
+
+## Closure (2026-07-12, revision `9a6153a`)
+
+All nine findings verified resolved against the revision diff:
+
+- **E-1:** Corpus standing nests `sources`; multi-adapter corpora explicit;
+  counts aggregate at corpus level while availability and freshness remain
+  attached to observed source members. Fixture added.
+- **E-2:** Source-set adapters report per-member `indexed_through`; "no single
+  byte offset claims to cover a file set." Disappeared members remain visible
+  as `unavailable`/`missing` until reconciled or purged — stronger than
+  requested.
+- **E-3:** `current` is now a timestamped whole-member integrity-audit
+  observation with a configured maximum age; new `tail_validated` standing
+  covers the between-audit interval; the resumable bounded audit procedure is
+  specified; O(source bytes) cost is reported separately; the detection-lag
+  window is a declared loss. Acceptance gates 7–8 pin the behavior.
+- **E-4:** Decision recorded as the split: identity-bearing
+  `canonicalization_version` + `boundary_version` (selected in the enrollment
+  declaration) versus provenance-only `implementation_version`, with visible
+  compatibility-validation failure if an implementation change alters
+  canonical output. The reconciler owns old-to-new supersession observations
+  as operational state, not source authority, with a named purge class.
+- **E-5:** Worked example fully populated and self-consistent.
+- **E-6:** New "Stage boundary accounting" section makes the growth conscious
+  and requires the implementation plan to keep supporting mechanisms
+  separable.
+- **E-7:** Both Claude Code boundary edge cases declared under boundary
+  version 1.
+- **E-8:** Version 1 schemas declared strict with no extension carrier;
+  unknown fields fail schema validation; the first extension specification
+  must define its negotiated carrier.
+- **E-9:** Reference length recorded as a declared loss, with the instruction
+  that Stage 3 accommodate the cost rather than invent a shorter reference
+  with weaker offline integrity.
+
+**Residual (minor, absorb at implementation plan):** audit procedure steps 3
+and 5 restart the whole-member audit if the member changes during it, which
+conflates benign append past the recorded end with rewrite inside the audited
+range. A continuously active member could starve `current` and sit
+indefinitely at `tail_validated`. Nothing dishonest results — the standing is
+truthful and the convergence gate would surface chronic starvation — but the
+implementation may distinguish append-beyond-recorded-end (audit remains valid
+through its recorded end) from change-within-audited-range (restart).
+
+**Verdict: mergeable.** The review round is closed.
