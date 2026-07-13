@@ -10,7 +10,7 @@
 
 | Surface | Reviewed revision | Standing |
 |---|---|---|
-| `llm-memory` Stage 1 | `e95e32fbc739a4f5d3e21131b506472214346ce2..701081aec6ed112723a3b730a244a1e29a7e64b4` | Isolated worktree on `feature/ayllu-stage1-contract`; includes the final compatibility completion-window and staging-ownership repair |
+| `llm-memory` Stage 1 | `e95e32fbc739a4f5d3e21131b506472214346ce2..5e6be56615956b2ec217958f797c682276ead24e` | Isolated worktree on `feature/ayllu-stage1-contract`; includes the final pending-tail transition and staging-ownership repair |
 | qhaway evidence parent | `c8c016352457380cf647a7a20ae8a3fed7b7497a` | Clean on `design/ayllu-stage-1-episodic-contract` before this record |
 | ArangoDB | Locally configured service, contract collections, and ArangoSearch view reachable | Used only for implementation tests and the synthetic evaluation corpus |
 
@@ -39,8 +39,8 @@ symlink was used for evaluation and was not committed.
 | Historical focused Stage 1 slice at `0799d7e` | `164 passed in 11.07s` | Pre-correction identity, enrollment, adapters, contract index, reconciliation, search, opening, lifecycle, MCP, and journey behavior passed together; this row is not attributed to the corrected endpoint |
 | Historical complete `llm-memory` suite at `ea4e3ae` | `180 passed in 8.69s` | Pre-repair endpoint evidence retained for chronology; it is not the final verification result |
 | Complete qhaway suite at the evidence parent | `137 passed in 12.31s` | Existing curated-memory behavior remained green |
-| Final reconciliation repair suite at `701081a` | `200 passed in 17.53s` | Focused regressions and the complete `llm-memory` suite passed after compatibility completion-window, prefix progress, derived-loss, full staging-publication CAS, zero-document recovery, and identifier repairs |
-| Final qhaway validation before repair-addendum commit | `137 passed in 13.05s` | Existing curated-memory behavior remained green with the final repaired Stage 1 evidence record |
+| Final reconciliation repair suite at `5e6be56` | `203 passed in 19.65s` | Focused regressions and the complete `llm-memory` suite passed after pending-tail transition, compatibility completion-window, prefix progress, derived-loss, staging-publication CAS, and crash recovery repairs |
+| Final qhaway validation before repair-addendum commit | `137 passed in 11.79s` | Existing curated-memory behavior remained green with the final repaired Stage 1 evidence record |
 | Arango cleanup | Contract episodes `0`; reconciliation states `0`; supersessions `0` for the evaluation corpus after purge | The test corpus left no derived documents |
 | Source immutability | Synthetic source SHA-256 was identical before and after the journey and purge | Derived lifecycle operations did not modify the authoritative source |
 
@@ -215,19 +215,19 @@ These dimensions are independent. No aggregate score is calculated.
 | Gate | Standing | Evidence |
 |---:|---|---|
 | 1 | Evidenced | Taste Open, gateway, and Claude Code documented identity tests |
-| 2 | Evidenced | At `701081a`, bounded compatibility audits retain fixed-prefix progress across append growth and publish final-stat tail standing in the scan/stat completion window; incompatible output preserves active references/provenance until semantic-version change |
+| 2 | Evidenced | At `5e6be56`, bounded compatibility audits retain fixed-prefix progress, publish final-stat tail standing, and admit pending tail only for the same published file with monotonic growth; shrink/replacement/disappearance take conservative replacement paths |
 | 3 | Evidenced | Byte-identical relocation and retained source-verified supersession tests |
 | 4 | Evidenced | Versioned requests/responses require concrete corpora and retain source/member standing |
 | 5 | Evidenced | Limit-independent exact aggregate/per-corpus counts; incompatible or unbacked active generations make index and population standing `unknown`, while an available empty source remains exact-empty |
 | 6 | Evidenced | Source set, member source, index, freshness, and indexed-through fields tested separately |
 | 7 | Evidenced | Stale, `tail_validated`, and incomplete indexes remain usable only with visible age/standing |
-| 8 | Evidenced | At `701081a`, prefix snapshot and final-stat publication distinguish trusted completion from pending tail while preserving rewrite restart, revision/generation/cursor/staging-owner CAS, and crash recovery |
+| 8 | Evidenced | At `5e6be56`, pending-tail generation identity distinguishes append from shrink, inode replacement, disappearance, and same-size mutation while retaining rewrite restart, CAS, and crash recovery |
 | 9 | Evidenced | Expected-reference opening re-reads source and verifies content digest |
 | 10 | Evidenced | Negative opening standings expose no derived fallback or content |
 | 11 | Evidenced | Automatic pre-search reconciliation and repeated bounded synthetic growth converge to `current` |
 | 12 | Evidenced | Disable, unenroll, selective purge, and re-enroll distinctions preserve source bytes |
 | 13 | Evidenced | Arango dependencies and measured additional 2-document / 2,046-byte projection reported separately |
-| 14 | Evidenced | Final endpoint `701081a`: complete `llm-memory` suite 200 passed; repair-focused storage/reconciliation/search/lifecycle slice 82 passed; qhaway companion suite 137 passed |
+| 14 | Evidenced | Final endpoint `5e6be56`: complete `llm-memory` suite 203 passed; repair-focused storage/reconciliation/search/lifecycle slice 85 passed; qhaway companion suite 137 passed |
 
 All fourteen gates have implementation evidence. Gate 11 is limited to
 observed synthetic growth, and gate 13's byte measurement is not physical
@@ -248,7 +248,7 @@ a backend, or authorize Stage 2 implementation automatically.
 
 ## 2026-07-12 Final Review Repair Addendum
 
-Revision `701081aec6ed112723a3b730a244a1e29a7e64b4` repairs the final
+Revision `5e6be56615956b2ec217958f797c682276ead24e` repairs the final
 whole-branch review findings without widening Stage 1 startup, scan, or opening
 scope.
 
@@ -270,6 +270,12 @@ scope.
   final stat, completion publishes that final size/generation and
   `tail_validated`, not stale-snapshot `current`; the next bounded call ingests
   the tail without changing established prefix identities.
+  Before that next call, reconciliation compares the live generation with the
+  published final generation. Only same-inode monotonic growth remains append
+  work. Shrinkage, inode/device replacement, disappearance, and same-size
+  mutation invalidate the old active generation for search and schedule a
+  replacement from byte zero; missing or malformed replacement cannot activate
+  a phantom empty generation.
 - **Gate 5 remains evidenced.** Availability now requires the stored active
   generation population to equal its recorded episode count. Episode-only
   derived purge is rebuilt before exact search is reported; otherwise index and
@@ -297,14 +303,14 @@ scope.
   coordination or filesystem snapshots and remains an explicit operational
   assumption rather than an unbounded reread on every bounded call.
 
-- **Gate 14 remains evidenced.** At `701081a`, the focused storage,
-  reconciliation, search, and lifecycle slice passed `82` tests in `14.30s`
-  and the final complete `llm-memory` suite passed `200` tests in `17.53s`. The qhaway
+- **Gate 14 remains evidenced.** At `5e6be56`, the focused storage,
+  reconciliation, search, and lifecycle slice passed `85` tests in `16.27s`
+  and the final complete `llm-memory` suite passed `203` tests in `19.65s`. The qhaway
   companion suite remains 137 tests. The earlier 180-test row is retained only
   as historical pre-repair evidence.
 
-The final repair suite passed `200` tests in `17.53s`; the qhaway companion suite
-passed `137` tests in `13.05s`. Test-derived Arango rows were zero afterward in
+The final repair suite passed `203` tests in `19.65s`; the qhaway companion suite
+passed `137` tests in `11.79s`. Test-derived Arango rows were zero afterward in
 the episodes, source-state, and supersession collections. The original
 `llm-memory` worktree remained limited to its two pre-existing dependency files
 with diff digest
