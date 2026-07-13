@@ -335,7 +335,7 @@ The independent review at
 `docs/superpowers/specs/2026-07-13-ayllu-stage-1-implementation-review.md`
 identified two blocking, nine major, and ten minor implementation findings at
 `5e6be56`. Repaired llm-memory endpoint
-`55558d8b5d5d632c908e28d7326a836ca6b1335e` closes the findings that could
+`18268096c076aacfc3eda52b7d45055575701ba0` closes the findings that could
 invalidate Stage 1 standing. The focused contract architecture and authority
 boundary did not require revision.
 
@@ -371,8 +371,8 @@ boundary did not require revision.
   Pre-search reconciliation remains bounded. Direct `reconcile_member()` now
   performs the same expired-audit demotion before exhausted work can preserve a
   stale current claim.
-- **Gate 14 remains evidenced.** The affected Stage 1 slice passed `223` tests
-  in `30.73s`; the complete llm-memory suite passed `237` tests in `31.82s`;
+- **Gate 14 remains evidenced.** The affected Stage 1 slice passed `224` tests
+  in `34.50s`; the complete llm-memory suite passed `238` tests in `34.67s`;
   the qhaway companion suite passed `137` tests in `14.15s`. Contract episodes,
   source states, and supersessions each counted zero after verification. Both
   full ranges passed `git diff --check`. The original llm-memory checkout still
@@ -391,6 +391,15 @@ supersession scans, but immutable Arango generation cloning remains O(active
 generation documents). `WorkBudget` meters authoritative source bytes and does
 not mislabel that database work as byte-bounded. Stage 2 must compare this cost
 against the peer backend.
+
+Post-review residual V-1 is resolved in implementation metadata. The strict
+typed-field and accepted-record parser repairs changed all three adapters from
+implementation version `1` to `2` without changing their identity-bearing
+canonicalization/boundary pair. A regression fixture establishes that retained
+version-1 state enters compatibility validation under version 2 and preserves
+a valid active generation and references. A future parser-only change must
+likewise advance implementation version even when semantic identity versions
+remain fixed.
 
 **Active implementation decision: continue.** Stage 1 is mergeable after broad
 final review. This continues to authorize consideration of a Stage 2 peer
