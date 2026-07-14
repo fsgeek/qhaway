@@ -145,3 +145,30 @@ requirement carry the Stage 1 evidence ethic forward intact.
 - **S2-3, S2-5, S2-6:** editorial-scale fixes at the author's discretion.
 - **Observations:** acknowledge or absorb; the sequencing choice (merge Stage
   1 first) should be made deliberately.
+
+## Author disposition (2026-07-14)
+
+- **S2-1: accepted.** Provider-assisted recalled adjudication now requires and
+  records an independent sequential scan of every authorized source member in
+  scope before coverage is computed.
+- **S2-4: accepted.** The manifest now names evaluating, adjudicating, private-
+  report, and reconstruction agent surfaces with maximum evidence scope.
+  `Local participant` means locally executed inference, not a local client for
+  hosted inference.
+- **S2-2: accepted.** Operational configuration selects exactly one provider
+  for optional supersession observations. The comparison harness keeps
+  provider-scoped opening observations separate and reports divergence.
+- **S2-3: accepted.** SQLite uses
+  `analyzed_any_segment_phrase`, not Arango's `analyzed_any_token`.
+- **S2-5: accepted.** An initial manifest may declare a source family
+  `uncharacterized`; a non-expanding characterization amendment does not
+  require a second authorization round.
+- **S2-6: accepted.** Unresolved recalled fixtures retain
+  `stratum: unassigned` until independent adjudication establishes evidence.
+- **FTS5 polarity observation: absorbed.** The SQLite provider exposes
+  `-bm25()` at the descending-score public boundary and records raw polarity
+  and normalization in the evaluation envelope.
+- **Sequencing observation: already satisfied.** Stage 1 endpoint `1826809` is
+  already fast-forwarded into local `llm-memory` `main`. Phase A is required to
+  branch from that mainline or a reviewed descendant, not the preserved feature
+  worktree.

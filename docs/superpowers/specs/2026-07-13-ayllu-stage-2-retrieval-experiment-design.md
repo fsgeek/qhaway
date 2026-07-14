@@ -2,13 +2,15 @@
 
 **Date:** 2026-07-13
 
-**Status:** Drafted under delegated Stage 2 authority; awaiting written review
+**Status:** Approved focused design; review findings closed 2026-07-14
 
 **Umbrella:** `docs/superpowers/specs/2026-07-10-qhaway-ayllu-memory-design.md`
 
 **Stage 1 contract:** `docs/superpowers/specs/2026-07-12-ayllu-stage-1-episodic-contract-design.md`
 
 **Stage 1 decision:** `docs/superpowers/baselines/2026-07-12-ayllu-stage-1-evaluation.md`
+
+**Review:** `docs/superpowers/specs/2026-07-13-ayllu-stage-2-retrieval-experiment-review.md`
 
 ## Decision summary
 
@@ -238,6 +240,19 @@ measure(scope) -> provider-specific resource observations with standing
 supersession observation only after source resolution fails to find the old
 identity. A provider document never supplies authoritative episode content.
 
+Operational service configuration selects exactly one provider at startup for
+derived supersession observations. The open request does not infer a provider,
+query both and merge their answers, or fall back to whichever provider is
+available. Exact source-backed opening remains provider-independent; only the
+optional transition from `missing` to `superseded` uses the configured
+provider's observation.
+
+The Stage 2 comparison harness may perform separate provider-scoped openings
+for the same old reference. Each observation is labeled with its provider in
+the evaluation envelope. A `superseded` observation from one provider and a
+`missing` observation from the other is recorded as reconciliation or retained-
+history divergence, not reconciled into one apparently authoritative standing.
+
 The Arango implementation may be wrapped to satisfy this boundary, but Stage 2
 does not authorize broad refactoring merely to make the two implementations
 look symmetrical.
@@ -265,6 +280,14 @@ BM25 column weights. A portable startup probe must establish that this exact
 configuration is available. Different strategy identifiers are intentional.
 Reusing one identifier for non-identical analyzers would manufacture
 equivalence.
+
+Its public `match_semantics` value is:
+
+```text
+analyzed_any_segment_phrase
+```
+
+It must not reuse Arango's `analyzed_any_token` value.
 
 The initial SQLite query interpretation is also fixed before real replay:
 
@@ -318,6 +341,12 @@ ordering, and measurement basis live in the Stage 2 evaluation envelope and in
 the provider's capability declaration. Existing Arango callers retain the
 current default strategy and behavior. An unknown strategy continues to fail
 visibly rather than selecting whichever provider is available.
+
+SQLite FTS5 `bm25()` uses lower, normally more-negative values for better
+matches. The SQLite provider exposes `score = -bm25()` and sorts the public
+response by score descending, then episode reference ascending, preserving the
+Stage 1 ordering convention. The evaluation envelope records the raw polarity
+and normalization. Score magnitudes are never compared across providers.
 
 ## SQLite FTS5 provider
 
@@ -449,6 +478,8 @@ manifest names:
 - any time or path exclusions;
 - the snapshot location and access permissions;
 - which local processes may read it;
+- every agent surface used to construct fixtures, adjudicate evidence, or write
+  content-bearing private reports, with its maximum evidence scope;
 - any hosted participant surfaces permitted to receive selected opened
   evidence, and the maximum evidence scope they may receive;
 - report fields allowed to survive;
@@ -458,6 +489,13 @@ manifest names:
 Authorization never uses `~`, a project parent, or automatic home-directory
 discovery as an implicit wildcard. Broad scope is produced by enumerating
 approved roots, not by making scope unknowable.
+
+An initial manifest may label a Codex or Gemini family `uncharacterized` and
+name the bounded samples that may be inspected to determine adapter standing.
+Characterization then amends that manifest with adapter and version standing;
+it does not require another authorization round when paths, evidence scope,
+processes, disclosure, retention, and purge terms are unchanged. Any amendment
+that expands one of those authority-bearing terms requires explicit approval.
 
 The target evidence environment includes native Codex history and at least one
 non-Codex tool family. It should include Claude Code, Gemini, Pichay, and
@@ -536,6 +574,16 @@ When no source evidence can be established, the fixture remains unresolved and
 can evaluate discovery behavior qualitatively, but it is excluded from exact
 expected-reference claims.
 
+Provider output may suggest candidate evidence during recalled-fixture
+adjudication, but it cannot define the expected set. Whenever Arango or SQLite
+output contributes a candidate, an independent sequential scan of every
+authorized source member in the fixture's concrete corpus scope must complete
+before coverage is computed. That scan uses the versioned adapters and exact
+opening, not either provider's index or ranking. The fixture records
+`adjudication_basis: provider_assisted_independent_scan` and which provider
+contributed candidates. This prevents one provider from defining the ground
+truth against which its peer is measured.
+
 ### Query vocabulary strata
 
 Queries are frozen before provider execution and classified for experimental
@@ -550,6 +598,10 @@ analysis as:
 
 These labels test the declared lexical limitation. They are not static source
 categories and do not become search facets.
+
+An unresolved recalled fixture has `stratum: unassigned`. It does not enter
+aligned, partial, or distant strata analysis until independent adjudication has
+established source evidence against which vocabulary overlap can be observed.
 
 The query text, expected references, and rationale prose remain local unless a
 separate disclosure decision permits publication. The committed evaluation may
@@ -611,6 +663,14 @@ manifest explicitly authorizes that named surface and disclosure scope. Ordinary
 use of Claude Code, Codex, Gemini, or another tool does not imply permission to
 send a new cross-tool evidence bundle. Without that authorization, the journey
 uses an authorized local participant or reports reconstruction unavailable.
+
+The same rule applies before reconstruction. Claude Code, Codex, Gemini, and
+other frontier-agent sessions used for fixture construction, adjudication, or
+private report writing are hosted evaluating surfaces when their inference runs
+through a remote service. The manifest must name them and bound the opened
+evidence they may receive. In this specification, **local participant** means
+inference executed locally on the evaluation host, not merely a locally
+installed client for a hosted model.
 
 Adjudication records:
 
@@ -697,6 +757,9 @@ Implement the provider boundary and SQLite FTS5 behavior using only synthetic
 sources. Replay the Stage 1 identity, standing, count, opening, reconciliation,
 concurrency, crash, and lifecycle fixtures against both providers where the
 behavior is provider-owned.
+
+Phase A branches from `llm-memory` local `main` at `1826809` or a reviewed
+descendant. The preserved Stage 1 feature worktree is not the Stage 2 base.
 
 No real-source authorization is needed for Phase A.
 
@@ -799,6 +862,8 @@ authorize sending conversation content to hosted evaluators, embedding APIs,
 telemetry, or cloud storage. A real-corpus manifest may separately authorize a
 named hosted reconstruction surface and bounded evidence bundle; it cannot
 authorize embedding, telemetry, or general cloud retention under this stage.
+Evaluating and adjudicating agent surfaces are subject to the same rule as
+reconstruction surfaces.
 
 ## Vector and hybrid revisit note
 
@@ -864,7 +929,8 @@ Stage 2 is conforming only when evidence establishes all of the following:
 2. Arango and SQLite pass the applicable portable Stage 1 contract fixtures
    without one provider acting as the other's fallback.
 3. Provider-specific strategies, analyzers, match semantics, and score ordering
-   are declared rather than presented as identical.
+   are declared rather than presented as identical; FTS5 score polarity is
+   normalized at the public boundary and retained in the evaluation envelope.
 4. SQLite search, bounded results, and per-corpus/aggregate counts use one read
    snapshot and never label partial scope exact.
 5. SQLite staging/activation, concurrent writers, crashes, and lock contention
@@ -876,26 +942,32 @@ Stage 2 is conforming only when evidence establishes all of the following:
 8. The authorized real snapshot is enumerated, partitioned by project/tool,
    byte-identical for both providers, and never modifies original source logs.
 9. The mixed rationale fixture freezes queries and source-verified expected
-   references before provider results are judged.
+   references before provider results are judged; provider-assisted recalled
+   adjudication completes and records an independent full source scan.
 10. Documented and recalled decisions retain distinct ground-truth standing;
     unresolved recall is not converted into fact.
 11. Aligned, partial, and vocabulary-distant query outcomes are reported without
-    turning the strata into corpus ontology.
+    turning the strata into corpus ontology, and unresolved fixtures remain
+    explicitly unassigned.
 12. Each provider's rationale evidence coverage is established through exact
     source opening, not snippets or scores alone.
 13. Fresh-participant reconstruction occurs only on explicitly authorized
     surfaces and records supported recovery, omissions, inventions, dissent
     loss, uncertainty, or honest unavailability independently from retrieval
     coverage.
-14. Installation, startup, reconciliation, query/count, concurrency, storage,
+14. Every hosted or locally executed agent used for fixture construction,
+    adjudication, private report writing, or reconstruction is named with its
+    maximum evidence scope; locally installed hosted clients are not mislabeled
+    local inference.
+15. Installation, startup, reconciliation, query/count, concurrency, storage,
     outage, purge, rebuild, and full removal costs name their measurement basis.
-15. The committed report contains no unauthorized conversation content, query
+16. The committed report contains no unauthorized conversation content, query
     text, paths, credentials, raw references, or participant evidence prompts.
-16. End-of-stage purge verifies provider artifacts and snapshot disposition and
+17. End-of-stage purge verifies provider artifacts and snapshot disposition and
     declares any lost repeatability or retained sensitive state.
-17. Existing qhaway and `llm-memory` suites and the new provider/evaluation
+18. Existing qhaway and `llm-memory` suites and the new provider/evaluation
     suites pass at the reviewed endpoints.
-18. No vector, hybrid, graph, federation, resident projection, or framework
+19. No vector, hybrid, graph, federation, resident projection, or framework
     delivery capability is implemented under Stage 2 authority.
 
 Failure of a gate produces `repair`, `stop`, or `reframe`; it is not averaged
