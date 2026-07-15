@@ -1007,6 +1007,12 @@ Preserve differences in ranking, match population, latency, ingestion, updates,
 operation, and removal. Backend selection is not required for the stage to be
 useful.
 
+After the synthetic provider checkpoint, Stage 2 may run the narrowly scoped
+synthetic Codex episodic-instrument preflight defined by
+`2026-07-15-ayllu-codex-episodic-instrument-design.md`. This exception exposes
+only read-only episodic MCP tools over synthetic sources. It does not authorize
+real-source activation or satisfy Stage 5.
+
 ### Stage 3: Evidence-linked memory
 
 Allow curated memories to reference exact episodes. Verify available,
@@ -1027,6 +1033,10 @@ Expose the same capabilities through supported Codex hooks and MCP
 configuration. Verify single resident-projection ownership, migration from a
 standalone qhaway adapter, symmetric removal, and that Codex-generated native
 memory remains untouched.
+
+The Stage 2 synthetic episodic-instrument preflight is prior evidence for this
+stage, not completion of it. Stage 5 retains ownership of hooks, resident
+projection, project resolution, migration, and full capability delivery.
 
 ### Later gated work
 

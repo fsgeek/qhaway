@@ -763,6 +763,18 @@ descendant. The preserved Stage 1 feature worktree is not the Stage 2 base.
 
 No real-source authorization is needed for Phase A.
 
+### Phase A2: synthetic Codex episodic-instrument preflight
+
+After the reviewed Phase A checkpoint, implement and evaluate the dedicated
+read-only Codex MCP instrument defined by
+`2026-07-15-ayllu-codex-episodic-instrument-design.md`. Use synthetic sources
+only. This phase may expose corpus discovery, bounded search, exact opening, and
+content-free activity inspection through the named global host consumer.
+
+Phase A2 does not authorize native Codex ingestion, real-source access,
+federation, curated memory, resident projection, hooks, or full Stage 5
+delivery. Passing Phase A2 authorizes only a separate real-activation review.
+
 ### Phase B: source-format characterization
 
 After the real-source manifest is proposed and authorized, inspect the minimum
@@ -967,8 +979,10 @@ Stage 2 is conforming only when evidence establishes all of the following:
     declares any lost repeatability or retained sensitive state.
 18. Existing qhaway and `llm-memory` suites and the new provider/evaluation
     suites pass at the reviewed endpoints.
-19. No vector, hybrid, graph, federation, resident projection, or framework
-    delivery capability is implemented under Stage 2 authority.
+19. No vector, hybrid, graph, federation, resident projection, hook, or
+    framework-delivery capability is implemented under Stage 2 authority except
+    the reviewed synthetic, read-only Codex episodic-instrument preflight. The
+    exception does not authorize real-source activation or satisfy Stage 5.
 
 Failure of a gate produces `repair`, `stop`, or `reframe`; it is not averaged
 away by strong performance elsewhere.
@@ -1014,7 +1028,8 @@ Passing Stage 2 does not automatically authorize Stage 3 implementation.
 - shared domain packages or an umbrella repository;
 - evidence-linked curated memory writes;
 - bilateral federation and cross-project authorization;
-- Codex or Gemini framework delivery;
+- Codex or Gemini framework delivery beyond the reviewed synthetic, read-only
+  Codex episodic-instrument preflight;
 - native Codex-memory modification;
 - resident episodic projection;
 - background candidate generation; and
