@@ -1,6 +1,6 @@
 # Ayllu Codex Episodic Instrument
 
-**Status:** Draft awaiting written review
+**Status:** Approved; adversarial design review closed 2026-07-16
 
 **Date:** 2026-07-15
 
@@ -100,6 +100,15 @@ Every corpus owner must explicitly accept that host-level trust boundary before
 real activation. A corpus that must be protected from another ayllu member
 requires a separate deployment, credentials, derived store, and review.
 Mixed-trust tenancy is unsupported.
+
+The Phase A2 synthetic-only boundary is enforced by steward conduct and
+reviewed fixture provenance, not by source-content classification in the
+server. The server cannot determine whether enrolled conversation-shaped bytes
+are synthetic. A `synthetic` declaration would repeat the steward's claim
+without authenticating it and would therefore overstate the mechanism. Phase
+A2 evidence must instead preserve the exact enrollment and grant snapshots,
+fixture-generation provenance, and source-access receipts used to establish
+that only reviewed synthetic sources were reachable.
 
 The system does not classify conduct as an ayni violation. It records actions,
 standing, denials, revocation, and residual state. Intent, reciprocity, and
@@ -238,14 +247,18 @@ containing:
 - contemporaneous purpose testimony; and
 - grant-snapshot digest.
 
-The binary plaintext envelope is exactly 8,192 bytes: a fixed magic and version,
-a four-byte canonical-JSON length, the canonical JSON, and random padding from
-the operating system. Search query text is limited to 4,096 UTF-8 bytes and
-purpose testimony to 1,024 UTF-8 bytes. Requests whose complete envelope does
-not fit fail before source access. `gpg` runs in batch mode with compression and
-ASCII armor disabled so the fixed plaintext bucket is not defeated. The
-envelope is passed through standard input, never through process arguments or
-environment variables.
+The binary plaintext envelope is exactly 8,192 bytes: the eight ASCII bytes
+`AYLLUQRY`, one version byte `0x01`, a four-byte unsigned big-endian
+canonical-JSON length, the canonical JSON, and random padding from the operating
+system. The maximum canonical JSON length is therefore 8,179 bytes. Search
+query text is limited to 4,096 UTF-8 bytes and purpose testimony to 1,024 UTF-8
+bytes. These field ceilings are independent safety bounds, not a promise that
+every combination of maximum fields and arbitrarily large concrete corpus
+scope will fit. The complete 8,179-byte serialized-payload bound is
+authoritative; oversized requests fail before source access. `gpg` runs in
+batch mode with compression and ASCII armor disabled so the fixed plaintext
+bucket is not defeated. The envelope is passed through standard input, never
+through process arguments or environment variables.
 
 The runtime receives only ciphertext. It has no decryption operation, private
 key, recovery mechanism, or plaintext fallback. Encryption failure prevents
@@ -344,6 +357,15 @@ standing. It never returns ciphertext or decrypted request content.
 
 Activity inspection is itself recorded as an event.
 
+Activity scope is the entire `codex-personal-host` consumer identity, not the
+invoking Codex session. Version 1 has no stable, trusted per-session identity.
+Any local Codex session using this consumer can therefore observe the timing,
+operation, named corpora, work charge, and result standing of other sessions'
+events. It cannot observe their query, purpose text, qualified reference,
+ciphertext, source path, or retrieved content. Consumer-wide visibility is an
+intentional ayllu-level observability choice and a declared privacy cost, not
+session-private self-inspection.
+
 Catalog and activity inspection read declarations and derived standing only.
 They never reconcile or open authoritative conversation sources. Search and
 opening are the only delivery tools permitted to read those sources. Catalog
@@ -374,7 +396,10 @@ The policy also states:
   epistemic benefit.
 
 The required purpose field creates a reflective pause. It is testimony, not
-proof of intent or compliance.
+proof of intent or compliance. This mechanical pause applies only to search and
+opening. Catalog and activity inspection reach no source content and have no
+purpose gate; their need-triggered, non-startup use is a behavioral expectation
+made observable by the preflight, not a mechanically enforced invariant.
 
 The no-per-call-approval design is an instrument policy, not authority over
 Codex itself. A host or administrator may impose stricter approval behavior.
@@ -526,7 +551,8 @@ installation identity and exact owned MCP-entry digest.
 
 The installer:
 
-- validates the selected provider and synthetic enrollment;
+- validates the selected provider and enrollment configuration; Phase A2
+  fixture provenance remains a steward-reviewed evidence obligation;
 - validates the grant and public-only keyring;
 - initializes or validates the delivery ledger;
 - records an installation identity and exact MCP configuration digest;
@@ -604,7 +630,8 @@ Declared limitations include:
 - purpose testimony may be mistaken or deceptive;
 - global availability exposes tool names to every local Codex project;
 - all granted corpora are available to every session using the host consumer;
-  and
+- sessions using the host consumer can inspect one another's content-free
+  timing, operation, corpus-scope, work-charge, and result metadata; and
 - uninstall without purge intentionally leaves declared local state.
 
 These losses are not canceled by retrieval usefulness.
@@ -620,6 +647,8 @@ Tests establish:
 - no wildcard, implicit corpus, or ungranted discovery;
 - public-only keyring and fingerprint validation;
 - fixed-size canonical payload sealing through standard input;
+- exact 13-byte envelope header and 8,179-byte serialized-payload boundary,
+  including maximum query, purpose, and multi-corpus combinations;
 - absence of plaintext query/purpose/reference from public state and errors;
 - deterministic grant and event hashing;
 - immutable event rows and explicit payload tombstones;
@@ -672,7 +701,8 @@ A fresh Codex session confirms that:
 - search scope and purpose are explicit;
 - relevant results are opened before evidence-backed claims;
 - incomplete, conflicting, or unavailable evidence retains its standing;
-- the participant can inspect its content-free activity; and
+- the participant can inspect consumer-wide content-free activity with its
+  cross-session standing declared; and
 - the participant can decline recall and explain the epistemic cost.
 
 This is participant testimony and observed conduct, not deterministic proof of
@@ -699,8 +729,12 @@ Synthetic delivery is conforming only when:
     reviewed endpoints.
 11. Independent review finds no unresolved Critical or Important authority,
     privacy, lifecycle, or evidence-standing defect.
-12. No real conversation source is inspected, enumerated, hashed, copied,
-    indexed, opened, or granted under synthetic-preflight authority.
+12. The evidence record establishes through exact enrollment and grant
+    snapshots, reviewed fixture provenance, and source-access receipts that the
+    steward made no real conversation source reachable, inspected, enumerated,
+    hashed, copied, indexed, opened, or granted under synthetic-preflight
+    authority. This is an audit conclusion about steward conduct, not a server
+    claim that it can classify source content as synthetic.
 
 Real activation additionally requires:
 
