@@ -461,12 +461,13 @@ anchor, signing service, dashboard, or alert.
 Search and opening follow this order:
 
 ```text
-validate request
+validate request shape and size
   -> load and validate grant snapshot
-  -> intersect enrollment, enablement, grant, and named scope
   -> create event identity
   -> seal exact request and purpose
   -> atomically append sealed payload + started event
+  -> intersect enrollment, enablement, grant, and named scope
+  -> append denied and stop when the intersection fails
   -> reconcile/search/open through the existing contract
   -> reload and validate the grant before disclosure
   -> append terminal event
@@ -477,6 +478,11 @@ If encryption or the initial append fails, no source is read. If provider work
 fails, a terminal failure event declares the observed work charge and standing.
 If terminal logging fails after a source read, no content is disclosed; the
 started event remains incomplete.
+
+An initial scope denial returns only `scope_denied`; it does not distinguish an
+unknown, disabled, or ungranted corpus. The caller-supplied named scope remains
+visible in the content-free event metadata, but the sealed query, purpose, and
+reference do not.
 
 If the grant is unavailable, changed, disabled, or revoked before disclosure,
 the service discards retrieved content and appends `revoked_in_flight`. It
@@ -632,6 +638,8 @@ Declared limitations include:
 - all granted corpora are available to every session using the host consumer;
 - sessions using the host consumer can inspect one another's content-free
   timing, operation, corpus-scope, work-charge, and result metadata; and
+- a denied request leaves its caller-supplied corpus identifiers visible
+  without confirming whether those corpora exist; and
 - uninstall without purge intentionally leaves declared local state.
 
 These losses are not canceled by retrieval usefulness.

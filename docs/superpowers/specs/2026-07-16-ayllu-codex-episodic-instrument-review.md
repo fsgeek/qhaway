@@ -225,3 +225,11 @@ focused Phase A2 preflight rather than a reframe.
   observable behavioral expectation rather than a false mechanical invariant.
 
 With these repairs, the focused design is approved for implementation planning.
+
+During plan-readiness review, Codex also closed one internal inconsistency not
+raised in the external findings: the design promised observable denials while
+ordering scope rejection before event creation. The request flow now seals and
+records a structurally valid search/open attempt before the authorization
+intersection, records only `scope_denied`, and still performs no source access.
+The caller-supplied denied scope is named as visible metadata without confirming
+whether any named corpus exists.
