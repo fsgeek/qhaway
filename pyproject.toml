@@ -1,10 +1,11 @@
 [project]
 name = "qhaway"
-version = "0.1.1"
+version = "0.3.0"
 description = "A truncation-proof projection of a Markdown memory index: regenerate MEMORY.md to fit the loader's budget and declare what it sets aside, instead of being silently cut."
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Tony", email = "fsgeek@cs.ubc.ca" }]
 keywords = ["memory", "index", "markdown", "llm", "agent", "sqlite", "mcp"]
 classifiers = [
@@ -16,6 +17,19 @@ dependencies = [
     "mcp[cli]>=1.28.0",
     "pyyaml",
 ]
+
+[dependency-groups]
+# Dev-only tooling, not shipped with the package. CI installs this group to run
+# the suite deterministically (`uv sync --group dev`).
+dev = ["pytest>=9"]
+
+[project.optional-dependencies]
+# Live-store claim re-grounding against a yanantin ArangoDB. Optional because
+# it is the federation seam toward yanantin, not core qhaway: the base package
+# is the pure index/projection slice. Installing `qhaway[reground]` pulls the
+# driver used by the live re-grounding tests; the injected-callable contract
+# itself is tested without it.
+reground = ["python-arango>=8.3.3"]
 
 [project.scripts]
 qhaway = "qhaway.cli:main"

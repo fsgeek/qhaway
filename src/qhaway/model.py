@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import sqlite3
 import sys
 import time
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from qhaway import parse
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DB_NAME = ".qhaway.db"
 LOCK_NAME = ".qhaway.db.reset.lock"
 _DB_SUFFIXES = ("", "-wal", "-shm")
@@ -28,7 +29,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     date_hint TEXT,
     body TEXT,
     mtime_ns INTEGER,
-    size INTEGER
+    size INTEGER,
+    claim TEXT
 )
 """
 
@@ -46,6 +48,7 @@ _CREATE_EDGE_INDEX = "CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges (dst_slu
 _NODE_COLUMNS = (
     "file", "name", "content_type", "description", "role",
     "status", "origin_session", "date_hint", "body", "mtime_ns", "size",
+    "claim",
 )
 
 
@@ -70,14 +73,26 @@ def get_connection(memory_dir: str) -> sqlite3.Connection:
 def _open_wal(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.execute("PRAGMA busy_timeout = 5000")
-    try:
-        mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
-    except sqlite3.OperationalError as exc:
-        conn.close()
-        raise RuntimeError(
-            "qhaway requires SQLite WAL mode, which this filesystem does not "
-            f"support (move the memory dir to local storage): {exc}"
-        ) from exc
+    # `PRAGMA journal_mode=WAL` switches the journal mode, which needs an
+    # exclusive lock that SQLite's busy handler does NOT cover — under the first
+    # concurrent open of a fresh DB it can raise `database is locked` outright
+    # even with busy_timeout set. WAL is a persistent file property, so that
+    # contention is transient: retry it at the application level rather than
+    # misreporting a transient lock as an unsupported filesystem.
+    deadline = time.monotonic() + 5.0
+    while True:
+        try:
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+            break
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower() and time.monotonic() < deadline:
+                time.sleep(0.01)
+                continue
+            conn.close()
+            raise RuntimeError(
+                "qhaway requires SQLite WAL mode, which this filesystem does not "
+                f"support (move the memory dir to local storage): {exc}"
+            ) from exc
     if mode is not None and str(mode[0]).lower() != "wal":
         conn.close()
         raise RuntimeError(
@@ -124,8 +139,10 @@ def _schema_drifted(conn: sqlite3.Connection) -> bool:
     if version != SCHEMA_VERSION:
         return True
     # Defensive: version matches but columns are missing (hand-corrupted db).
+    # Check against the full declared column set so a stamped-but-incomplete db
+    # (e.g. v2 stamp, claim column never added) still rebuilds from disk.
     cols = {row[1] for row in conn.execute("PRAGMA table_info(nodes)")}
-    if not {"mtime_ns", "size"}.issubset(cols):
+    if not set(_NODE_COLUMNS).issubset(cols):
         return True
     return False
 
@@ -157,11 +174,17 @@ def upsert_file(conn: sqlite3.Connection, path: Path) -> None:
             node["file"], node["name"], node["content_type"], node.get("description"),
             node["role"], node["status"], node["origin_session"], node["date_hint"],
             node["body"], stat.st_mtime_ns, stat.st_size,
+            json.dumps(node["claim"]) if node.get("claim") else None,
         ],
     )
     for dst_slug in node["links"]:
         conn.execute(
             "INSERT OR IGNORE INTO edges (src_file, dst_slug, kind) VALUES (?, ?, 'REFERENCES')",
+            [node["file"], dst_slug],
+        )
+    for dst_slug in node.get("supersedes", []):
+        conn.execute(
+            "INSERT OR IGNORE INTO edges (src_file, dst_slug, kind) VALUES (?, ?, 'SUPERSEDES')",
             [node["file"], dst_slug],
         )
 
@@ -174,7 +197,10 @@ def delete_node(conn: sqlite3.Connection, file_name: str) -> None:
 def fetch_nodes(conn: sqlite3.Connection) -> list[dict]:
     cursor = conn.execute(f"SELECT {', '.join(_NODE_COLUMNS)} FROM nodes")
     columns = [col[0] for col in cursor.description]
-    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    nodes = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    for node in nodes:
+        node["claim"] = json.loads(node["claim"]) if node.get("claim") else None
+    return nodes
 
 
 def rebuild_database(memory_dir: str) -> None:

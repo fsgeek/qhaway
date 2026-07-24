@@ -30,7 +30,10 @@ def test_mcp_json_registers_server():
     server = j["mcpServers"]["qhaway"]
     assert server["command"] == "uvx"
     args = server["args"]
-    assert args[:4] == ["--python", "3.14", "qhaway", "serve"]
+    # The deployed server pulls the [reground] extra so a claim re-grounds live on
+    # recall (python-arango is the only thing the extra adds; default_provider
+    # self-gates on db.ini, so a storeless box still recalls byte-identically).
+    assert args[:4] == ["--python", "3.14", "qhaway[reground]", "serve"]
     # No hardcoded --dir: serve derives the slug dir from CLAUDE_PROJECT_DIR.
     assert "--dir" not in args
     assert not any("qhaway-memory" in a for a in args)

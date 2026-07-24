@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch/PR cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (Python 3.14)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Sync (locked, dev group)
+        # --locked fails if uv.lock is out of date with pyproject.toml, so a
+        # drifted lock is caught here, not discovered at runtime.
+        run: uv sync --locked --group dev
+
+      - name: Run tests
+        # The live-store (reground) tests skip cleanly without an ArangoDB or a
+        # ~/.yanantin config, so the base suite is fully green in CI.
+        run: uv run --no-sync pytest -q

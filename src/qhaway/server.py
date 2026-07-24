@@ -32,14 +32,14 @@ def _emit(root: Path, event: dict) -> None:
         pass
 
 
-def remember(type, title, body, description=None, links=None, memory_dir=".") -> str:
+def remember(type, title, body, description=None, links=None, supersedes=None, memory_dir=".") -> str:
     if type not in VALID_TYPES:
         raise ValueError(f"invalid type {type!r}; must be one of {sorted(VALID_TYPES)}")
     root = Path(memory_dir)
     if not root.is_dir():
         raise FileNotFoundError(f"memory directory is not readable: {memory_dir}")
 
-    text = reconcile.compose_topic_file(type, title, body, description, links)
+    text = reconcile.compose_topic_file(type, title, body, description, links, supersedes)
     stem = reconcile.slugify(title)
     filename = _exclusive_write(root, stem, text)
     reconcile.reconcile(str(root))
@@ -64,7 +64,14 @@ def _exclusive_write(root: Path, stem: str, text: str) -> str:
     )
 
 
-def recall(type=None, role=None, status="live", memory_dir=".") -> str:
+def recall(type=None, role=None, status="live", memory_dir=".", reground=None) -> str:
+    """Project the memory slice; if `reground` is injected, re-ground any claim.
+
+    `reground` is an optional callable taking a claim dict and returning a live
+    rendered string (yanantin supplies it; qhaway never imports the DB layer —
+    dependency inversion, see 2026-06-28-claim-regrounding-at-recall-design.md).
+    Without it, or absent any claim, the projection is byte-identical to before.
+    """
     root = Path(memory_dir)
     if not root.is_dir():
         raise FileNotFoundError(f"memory directory is not readable: {memory_dir}")
@@ -73,16 +80,86 @@ def recall(type=None, role=None, status="live", memory_dir=".") -> str:
         result = project.project_slice_with_overflow(
             conn, budget=project.DEFAULT_BUDGET, content_type=type, role=role, status=status
         )
+        claims = _claim_nodes(conn, type, role, status) if reground is not None else []
     finally:
         conn.close()
+    markdown = result.markdown
+    if claims:
+        markdown = markdown.rstrip() + "\n\n" + _render_regroundings(claims, reground) + "\n"
     _emit(root, {"verb": "recall", "type": type, "role": role, "status": status,
-                 "result_chars": len(result.markdown)})
-    return result.markdown
+                 "result_chars": len(markdown)})
+    return markdown
+
+
+def _claim_nodes(conn, content_type, role, status) -> list[dict]:
+    """Claim-bearing nodes within the SAME slice the projection shows — re-grounding
+    must respect the recall filter (type/role/status), not leak claims from
+    memories outside the projected set. Normalizes content_type/status the way the
+    projection does (project._normalize_row) so the two slices agree exactly."""
+    return [
+        node for node in model.fetch_nodes(conn)
+        if node.get("claim")
+        and (node.get("status") or "live") == status
+        and (content_type is None or (node.get("content_type") or "project") == content_type)
+        and (role is None or node.get("role") == role)
+    ]
+
+
+def _render_regroundings(claims: list[dict], reground) -> str:
+    """One re-grounded line per claim-bearing memory — staleness made legible at
+    recall. The frozen value lives in the body; reground returns the live one."""
+    lines = ["## Re-grounded claims"]
+    for node in claims:
+        live = reground(node["claim"])
+        lines.append(f"- [{node.get('name') or node['file']}]({node['file']}): {live}")
+    return "\n".join(lines)
 
 
 def initialize_server(memory_dir: str) -> None:
     """Run exactly one reconcile at startup, before accepting tool calls (C-3)."""
     cli.reconcile(memory_dir)
+
+
+def build_server(memory_dir: str):
+    """Construct the configured FastMCP server (tools bound, version surfaced)
+    WITHOUT running the blocking loop — the testable seam for the handshake.
+
+    FastMCP's constructor exposes no version pass-through, so set it on the
+    wrapped low-level server; this is the field a client reads as
+    serverInfo.version (otherwise the SDK's own version is misreported).
+    """
+    from qhaway import __version__, reground as reground_mod
+    from mcp.server.fastmcp import FastMCP
+
+    mcp = FastMCP(
+        "qhaway",
+        instructions=f"qhaway memory server v{__version__}. Call recall() first; "
+        "your context is stale and recall() is the latest word.",
+    )
+    mcp._mcp_server.version = __version__
+
+    # Discover the re-ground provider once, at serve time. None on a base install
+    # (no [reground] extra) or a storeless box → recall stays byte-identical. With
+    # the extra + a db.ini present, claims re-ground live on the deployed path.
+    _reground = reground_mod.default_provider()
+
+    @mcp.tool()
+    def recall(type=None, role=None, status="live") -> str:
+        """Read your memory: a budgeted projection of the structured store, not
+        the whole file. Omit args for the working set; filter by `type`
+        (user/feedback/project/reference), `role`, or `status`."""
+        return _recall_impl(type, role, status, memory_dir, reground=_reground)
+
+    @mcp.tool()
+    def remember(type, title, body, description=None, links=None, supersedes=None) -> str:
+        """Write a memory to the structured store. `type` is one of
+        user/feedback/project/reference. When this memory replaces an earlier
+        one, pass `supersedes` (a slug, [[wikilink]], or list of them) naming the
+        memory it retires — recall will then demote the loser. Returns the topic
+        filename written."""
+        return _remember_impl(type, title, body, description, links, supersedes, memory_dir)
+
+    return mcp
 
 
 def run(memory_dir: str) -> None:
@@ -92,25 +169,8 @@ def run(memory_dir: str) -> None:
     limb. The verbs already exist above; this binds them to the memory dir and
     runs the protocol loop a Claude Code session connects to.
     """
-    from mcp.server.fastmcp import FastMCP
-
     initialize_server(memory_dir)
-    mcp = FastMCP("qhaway")
-
-    @mcp.tool()
-    def recall(type=None, role=None, status="live") -> str:
-        """Read your memory: a budgeted projection of the structured store, not
-        the whole file. Omit args for the working set; filter by `type`
-        (user/feedback/project/reference), `role`, or `status`."""
-        return _recall_impl(type, role, status, memory_dir)
-
-    @mcp.tool()
-    def remember(type, title, body, description=None, links=None) -> str:
-        """Write a memory to the structured store. `type` is one of
-        user/feedback/project/reference. Returns the topic filename written."""
-        return _remember_impl(type, title, body, description, links, memory_dir)
-
-    mcp.run()
+    build_server(memory_dir).run()
 
 
 # Module-level aliases so the tool wrappers above call the real verbs without

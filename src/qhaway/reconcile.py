@@ -87,25 +87,64 @@ def normalize_link(raw: str) -> str:
     return slugify(text)
 
 
-def compose_frontmatter(type: str, title: str, description: str | None) -> str:
+def compose_frontmatter(type: str, title: str, description: str | None,
+                        supersedes: list[str] | None = None) -> str:
     data = {"name": title, "type": type}
     if description is not None:
         data["description"] = description
+    if supersedes:
+        # Stored as [[wikilink]] strings so the on-disk key reads naturally and
+        # round-trips through parse._supersedes (which accepts [[A]] or bare).
+        data["supersedes"] = [f"[[{slug}]]" for slug in supersedes]
     dumped = yaml.safe_dump(
         data, allow_unicode=True, sort_keys=False, default_flow_style=False
     )
     return f"---\n{dumped}---\n"
 
 
-def compose_topic_file(type, title, body, description, links) -> str:
-    text = compose_frontmatter(type, title, description) + body
-    if isinstance(links, str):
-        links = [links]
+def _coerce_targets(raw: str | list[str]) -> list[str]:
+    """Turn an incoming supersedes/links value into a list of target strings.
+
+    The MCP boundary types these args as `str`, so a multi-target call arrives as
+    a stringified JSON array — `'["a","b"]'`. A single target arrives as a bare
+    string (`'a-slug'` or `'[[a]]'`). The Python API may pass a real list.
+
+    Intent detection, NOT a blanket try/except: only a value that looks like a
+    JSON array (`[` but not the `[[` of a wikilink) is parsed as JSON. If that
+    parse fails, the caller *meant* a list and malformed it — raise loudly rather
+    than fall back to [raw], which would silently fuse the targets into one slug
+    (the exact bug this fixes). Everything else is a single target.
+    """
+    if isinstance(raw, list):
+        return raw
+    text = raw.strip()
+    if text.startswith("[") and not text.startswith("[["):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"value looked like a JSON array but did not parse: {raw!r} ({exc})"
+            ) from exc
+        if not isinstance(parsed, list):
+            raise ValueError(f"expected a JSON array, got {type(parsed).__name__}: {raw!r}")
+        return parsed
+    return [raw]
+
+
+def _dedupe_normalized(values: str | list[str]) -> list[str]:
+    """Coerce to a target list, normalize via normalize_link, dedupe, keep order."""
+    seen: dict[str, None] = {}
+    for value in _coerce_targets(values):
+        seen.setdefault(normalize_link(value), None)
+    return list(seen)
+
+
+def compose_topic_file(type, title, body, description, links, supersedes=None) -> str:
+    normalized_supersedes = _dedupe_normalized(supersedes) if supersedes else None
+    text = compose_frontmatter(type, title, description, normalized_supersedes) + body
     if links:
-        seen: dict[str, None] = {}
-        for link in links:
-            seen.setdefault(normalize_link(link), None)
-        text = text.rstrip() + "\n\n" + "\n".join(f"[[{slug}]]" for slug in seen) + "\n"
+        slugs = _dedupe_normalized(links)
+        text = text.rstrip() + "\n\n" + "\n".join(f"[[{slug}]]" for slug in slugs) + "\n"
     return text
 
 

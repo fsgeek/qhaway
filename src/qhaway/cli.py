@@ -9,6 +9,7 @@ from pathlib import Path
 
 from qhaway import model, parse, paths, project, server
 from qhaway import reconcile as reconcile_mod
+from qhaway import setup as setup_mod
 from qhaway.reconcile import reconcile
 
 MEMORY_NAME = "MEMORY.md"
@@ -27,8 +28,19 @@ def main(args: list[str] | None = None) -> int:
         p.add_argument("--dry-run", action="store_true")
         p.add_argument("--check", action="store_true")  # deprecated alias on index
         p.add_argument("--emit", action="store_true")
+    sub.add_parser("session-start")
+    sub.add_parser("session-end")
+    sub.add_parser("init", aliases=["install"])  # install/uninstall is the pair users reach for
+    sub.add_parser("uninstall")
 
     ns = parser.parse_args(args)
+
+    if ns.command in ("session-start", "session-end"):
+        return _session(ns.command)
+
+    if ns.command in ("init", "install", "uninstall"):
+        return _setup_cmd(ns.command)
+
     directory = _resolve_dir(ns)
 
     if ns.command == "serve":
@@ -61,6 +73,51 @@ def main(args: list[str] | None = None) -> int:
     return 0
 
 
+def _setup_cmd(which: str) -> int:
+    home = Path.home()
+    settings_path = home / ".claude" / "settings.json"  # hooks (PUSH)
+    mcp_config_path = home / ".claude.json"             # MCP server (PULL)
+    if which in ("init", "install"):
+        result = setup_mod.install(settings_path, mcp_config_path=mcp_config_path)
+        if result == "already":
+            sys.stdout.write("qhaway: already installed, nothing to do.\n")
+        else:
+            sys.stdout.write(
+                "qhaway: installed (boot hooks + recall/remember MCP server).\n"
+                "        It activates in any project that has memory;\n"
+                "        projects without memory are untouched.\n"
+                "        Restart Claude Code for the MCP server to load.\n"
+                "        Remove with: uvx qhaway uninstall\n"
+            )
+        return 0
+    result = setup_mod.uninstall(settings_path, mcp_config_path=mcp_config_path)
+    if result == "absent":
+        sys.stdout.write("qhaway: not installed, nothing to do.\n")
+    else:
+        sys.stdout.write("qhaway: removed. Your MEMORY.md files are left in place.\n")
+    return 0
+
+
+def _session(which: str) -> int:
+    """Self-gating SessionStart/SessionEnd entry. Derives the per-project memory
+    dir from CLAUDE_PROJECT_DIR and no-ops cleanly when the project has no memory
+    (no var, or dir without topic files). One user-scope install thus serves all
+    projects without firing where there is nothing to do."""
+    memory_dir = paths.derive_from_env(os.environ)
+    if memory_dir is None or not paths.has_memory(memory_dir):
+        return 0  # dormant — touch nothing
+    directory = str(memory_dir)
+    if which == "session-start":
+        reconcile(directory)
+        conn = model.get_connection(directory)
+        try:
+            sys.stdout.write(project.project_slice(conn, budget=project.DEFAULT_BUDGET))
+        finally:
+            conn.close()
+        return 0
+    return _exit(directory, project.DEFAULT_BUDGET)
+
+
 def _resolve_dir(ns, environ=None, home=None) -> str:
     """Resolve the memory dir. Explicit --dir wins, then QHAWAY_MEMORY_DIR, then
     the slug dir derived from CLAUDE_PROJECT_DIR (so serve, session-start, and
@@ -77,8 +134,15 @@ def _resolve_dir(ns, environ=None, home=None) -> str:
 
 
 def _serve(directory: str) -> int:
-    if not os.path.isdir(directory):
-        sys.stderr.write(f"memory directory is not readable: {directory}\n")
+    # A fresh project has no memory dir yet. serve must PROVISION it, not reject
+    # it — otherwise CC sees the process exit and reports a failed MCP connection,
+    # and the first remember() could never create the first memory. Create the
+    # dir (parents included) so the server starts ready to write. A genuinely
+    # unwritable path still fails — cleanly, to stderr, never to stdout (G-5).
+    try:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        sys.stderr.write(f"cannot create memory directory {directory}: {exc}\n")
         return 1
     server.run(directory)
     return 0
@@ -176,6 +240,7 @@ def _check(directory: str, budget: int) -> int:
     try:
         dangling = _dangling_links(conn)
         stale_drift = _stale_drift(conn)
+        edge_superseded = _edge_superseded(conn)
         full_projection = project.project_slice(conn, budget=10**12)
     finally:
         conn.close()
@@ -194,6 +259,15 @@ def _check(directory: str, budget: int) -> int:
         )
         for file_name, marker in stale_drift:
             sys.stdout.write(f"- {file_name} (body says {marker}; retire it: set name: 'SUPERSEDED — see ...')\n")
+
+    if edge_superseded:
+        exit_code = 1
+        sys.stdout.write(
+            "live memories a winner declared it supersedes (recall demotes them, "
+            "but the file still reads status: live):\n"
+        )
+        for file_name in edge_superseded:
+            sys.stdout.write(f"- {file_name} (target of a supersedes: edge)\n")
 
     if len(full_projection.encode("utf-8")) > budget:
         overflow = len(full_projection.encode("utf-8")) - budget
@@ -224,6 +298,24 @@ def _stale_drift(conn) -> list[tuple[str, str]]:
         if marker:
             drift.append((file_name, marker))
     return drift
+
+
+def _edge_superseded(conn) -> list[str]:
+    """The PRECISE staleness path: live nodes that are the target of a SUPERSEDES
+    edge (a winner declared `supersedes: [[loser]]`). Unlike _stale_drift's body
+    scrape, this is an exact lookup — the structured signal the prose heuristic
+    was a stand-in for. A node explicitly tombstoned (status != live) is already
+    handled by the projector and not re-reported here.
+    """
+    rows = conn.execute(
+        """
+        SELECT n.file FROM nodes n
+        JOIN edges e ON e.dst_slug = substr(n.file, 1, length(n.file) - 3)
+        WHERE e.kind = 'SUPERSEDES' AND n.status = 'live'
+        ORDER BY n.file
+        """
+    ).fetchall()
+    return [row[0] for row in rows]
 
 
 def _body_supersession_marker(body: str) -> str | None:

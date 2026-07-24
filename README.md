@@ -1,5 +1,7 @@
 # qhaway
 
+[![CI](https://github.com/fsgeek/qhaway/actions/workflows/ci.yml/badge.svg)](https://github.com/fsgeek/qhaway/actions/workflows/ci.yml)
+
 *Quechua: "to see / to watch over."* The name states the cure — make the whole
 memory record **visible** instead of silently truncated.
 
@@ -47,31 +49,32 @@ claims and guaranteed under budget. Nothing downstream changes.
 
 ## Install
 
-The easiest way to run qhaway is as a **Claude Code plugin**. While enabled, it
-delivers your memory at every session start and leaves a current, signed index
-when the session ends — automatically, no commands to run.
+```sh
+uvx qhaway init        # `uvx qhaway install` works too
+```
 
-The only prerequisite is [`uv`](https://docs.astral.sh/uv/). You do not install
-qhaway, Python, or any dependencies yourself — the plugin invokes it with `uvx`,
-which fetches the published package and a managed Python into an isolated cache
-on first use.
+Then **restart Claude Code.** qhaway wires itself in at user scope — both the
+boot hooks (which deliver your memory at session start) and the `recall` /
+`remember` MCP tools — and activates in any project that already has memory;
+projects without memory are untouched. No clone, no per-project setup. To remove
+it: `uvx qhaway uninstall` (your `MEMORY.md` files are left in place).
+
+(Requires [`uv`](https://docs.astral.sh/uv/) — `uvx` fetches qhaway and a
+managed Python on first use.)
+
+### As a Claude Code plugin
+
+If you'd rather load qhaway per-session from a checkout instead of installing it
+at user scope, point Claude Code at the bundled plugin:
 
 ```sh
-# 1. one-time: have uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. clone, then point Claude Code at the plugin
 git clone https://github.com/fsgeek/qhaway
 claude --plugin-dir qhaway/qhaway-plugin
 #    the plugin ships disabled — enable it from /plugin to opt in
 ```
 
-**Turning it off is just as easy.** Disable it from `/plugin` and the hooks stop
-firing; your `MEMORY.md` is left as a plain, readable, self-sufficient index —
-nothing broken, nothing to clean up. qhaway *borrows* the index file while
-enabled and *returns* a current honest one when it leaves. To remove every
-trace, `uv cache clean` purges the cached package; there is no persistent
-install to uninstall.
+Disable it from `/plugin` and the hooks stop firing; your `MEMORY.md` is left as
+a plain, readable, self-sufficient index — nothing broken, nothing to clean up.
 
 ### As a standalone CLI
 
@@ -113,20 +116,10 @@ below) but won't survive into the index unless it lives in a topic file.
 
 ## MCP spine (remember / recall)
 
-The spine lets a Claude Code instance reach its memory through MCP tools instead
-of hand-writing files. `MEMORY.md` becomes a managed, read-only **redirect** into
-the SQLite-derived index; the topic files stay the source of truth.
-
-```sh
-# Run the MCP server over a memory directory (reconciles once at startup)
-qhaway serve --dir <memory_dir>
-
-# Sync the index from the files (alias: qhaway index)
-qhaway reconcile --dir <memory_dir>
-
-# Inspect: broken wikilinks, orphan backups, low topic count, would-overflow
-qhaway check --dir <memory_dir>
-```
+After `init` and a restart, a Claude Code instance reaches its memory through two
+MCP tools instead of hand-writing files. `MEMORY.md` becomes a managed,
+read-only **redirect** into the SQLite-derived index; the topic files stay the
+source of truth.
 
 Two verbs are exposed to the model:
 
@@ -134,6 +127,12 @@ Two verbs are exposed to the model:
   (omit args for the working set).
 - `remember(type, title, body, description?, links?)` — writes a topic file then
   reconciles. Files stay truth; the DB is a derived, rebuildable view.
+
+You don't run the server yourself — `init` wires it. Under the hood the MCP
+server derives its memory directory from `CLAUDE_PROJECT_DIR` and provisions it
+on first use, so a brand-new project starts ready for its first `remember()`.
+(The internal commands — `qhaway serve`, `qhaway reconcile`, `qhaway check` —
+exist for debugging; a normal install never invokes them by hand.)
 
 `MEMORY.md` is written born-read-only (`0o444`) as a friction signal — not a hard
 barrier — so the reflexive hand-edit is deflected toward the tools. qhaway's own
@@ -177,5 +176,11 @@ feeling the same sprawl, it spreads. Propagation is the measurement.
 
 ## Status
 
-Early (`v0.1.0`). The design is specified in
+Early (`v0.2.1`). The design is specified in
 [`docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md`](docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md).
+
+## Contributing
+
+Changes go through pull requests; `main` is protected and merges only when CI is
+green. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and the test-first,
+separate-commits conventions the project expects. Licensed [MIT](LICENSE).

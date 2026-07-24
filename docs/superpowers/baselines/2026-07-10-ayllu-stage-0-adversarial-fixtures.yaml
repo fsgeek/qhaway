@@ -1,0 +1,58 @@
+schema_version: 1
+standing: declarative_only
+fixtures:
+  - id: curated-conflict-local-mounted
+    earliest_stage: 4
+    arrangement:
+      local_memory: consumer:local-position
+      mounted_memory: source:foreign-position
+      consumer_local_relationship: consumer:conflict-1
+    perturbation: project a budget that cannot fit both positions in full
+    expected:
+      - no position appears as an unqualified standalone assertion
+      - any partial envelope declares the number and standing of omitted positions
+
+  - id: export-withdrawal
+    earliest_stage: 4
+    arrangement:
+      exporter: source
+      consumer: consumer
+      mounted_memory: source:withdrawn-position
+    perturbation: source removes the named-consumer export
+    expected:
+      - foreign content and owner identity are suppressed
+      - a retained consumer-local conflict discloses only withdrawn position count and standing
+      - consumer-local authoritative state survives
+
+  - id: missing-episode-evidence
+    earliest_stage: 1
+    arrangement:
+      memory_reference: source/session-1/episode-1
+      source_standing: unavailable
+    perturbation: open the exact episode reference
+    expected:
+      - the reference resolves to an honest unavailable standing
+      - no cached snippet is presented as authoritative episode content
+
+  - id: bilateral-isolation
+    earliest_stage: 4
+    arrangement:
+      exporter: source
+      authorized_consumer: consumer-a
+      unauthorized_consumer: consumer-b
+    perturbation: consumer-b declares a mount without a matching named-consumer export
+    expected:
+      - access is denied
+      - cached coordinator state does not authorize access
+
+  - id: stale-index-bounded-search
+    earliest_stage: 1
+    arrangement:
+      source_standing: available
+      index_standing: stale
+      result_limit: 1
+    perturbation: search while reconciliation is incomplete
+    expected:
+      - at most one result is returned
+      - total-match standing and indexed-through standing are separate
+      - incompleteness is declared
