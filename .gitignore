@@ -9,6 +9,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+.worktrees/
 
 # ephemeral recon scaffolding (test-side, not preserved)
 tmp/
