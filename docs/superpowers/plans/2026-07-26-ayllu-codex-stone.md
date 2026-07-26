@@ -18,7 +18,7 @@
 - Inherit the existing navigation, typography, site tokens, and footer; add no JavaScript or external runtime dependency.
 - Do not rewrite or reorder existing Ayllu entries.
 - Create and verify a timestamped full-site backup before changing live files; do not delete any backup.
-- A failed in-session post-install check triggers restoration from the adjacent rollback copies; the verified full-site backup remains the fallback if the remote shell cannot run its trap.
+- A failed in-session post-install check triggers restoration from an adjacent rollback copy only while the live target still has this deployment's installed hash; otherwise preserve the unknown live bytes and rollback evidence. The verified full-site backup remains the fallback if the remote shell cannot run its trap.
 - Require the live index to match both its captured SHA-256 digest and exact captured bytes immediately before the first live-target mutation.
 - Stage pending files and rollback copies adjacent to their targets on the same filesystem, install each target with atomic `mv`, and keep a remote `ERR`/`INT`/`TERM`/`HUP` restoration trap active through server-local and public checks.
 - Restore the page to its prior bytes when it existed and to an absent-page state when it did not. Remove rollback artifacts only after validation succeeds, using only explicit paths (never globs or broad recursive removal).
@@ -264,7 +264,10 @@ Run one remote Bash session. Its trap is installed before the first live-target 
 ```bash
 ssh activitycontext.work bash -s -- \
   "$deploy_id" "$expected_index_before_sha" "$expected_index_after_sha" \
-  "$expected_page_sha" "$page_before_state" <<'REMOTE'
+  "$expected_page_sha" "$page_before_state" \
+  /var/www/wamason.com/ayllu /home/tony/.wamason-ayllu-deploy.lock \
+  https://wamason.com/ayllu/a-receipt-for-what-we-chose-not-to-remember/ \
+  https://wamason.com/ayllu/ none <<'REMOTE'
 set -Eeuo pipefail
 
 deploy_id=$1
@@ -272,7 +275,11 @@ expected_index_before_sha=$2
 expected_index_after_sha=$3
 expected_page_sha=$4
 page_before_state=$5
-site_dir=/var/www/wamason.com/ayllu
+site_dir=$6
+lock_path=$7
+page_url=$8
+index_url=$9
+failpoint=${10}
 page_dir=$site_dir/a-receipt-for-what-we-chose-not-to-remember
 page_live=$page_dir/index.html
 index_live=$site_dir/index.html
@@ -284,23 +291,84 @@ page_rollback=$page_dir/.index.html.$deploy_id.rollback
 index_rollback=$site_dir/.index.html.$deploy_id.rollback
 page_public_check=$page_dir/.index.html.$deploy_id.public-check
 index_public_check=$site_dir/.index.html.$deploy_id.public-check
-page_rollback_ready=0
-index_rollback_ready=0
+
+exec 9>"$lock_path"
+flock -n 9 || {
+  printf 'deployment lock busy: %s\n' "$lock_path" >&2
+  exit 75
+}
+
+case $failpoint in
+  none|before-mutation|after-page|after-both|unknown-page|unknown-index) ;;
+  *) printf 'invalid deployment failpoint: %s\n' "$failpoint" >&2; exit 64 ;;
+esac
+if test "$site_dir" = /var/www/wamason.com/ayllu && test "$failpoint" != none; then
+  printf 'test failpoints are forbidden for production site: %s\n' "$failpoint" >&2
+  exit 64
+fi
+
+page_attempted=0
+index_attempted=0
+ownership_conflict=0
+page_restored=0
+index_restored=0
+page_rollback_created=0
+index_rollback_created=0
+
+owns_installed_bytes() {
+  target=$1
+  installed_sha=$2
+  test -f "$target" || return 1
+  test "$(sha256sum "$target" | awk '{print $1}')" = "$installed_sha"
+}
+
+cleanup_owned_nonrollback_artifacts() {
+  rm -f -- "$page_transport" "$page_pending" "$index_pending" "$index_guard" \
+    "$page_public_check" "$index_public_check"
+  if test "$index_rollback_created" = 1 && \
+      { test "$index_attempted" = 0 || test "$index_restored" = 1; }; then
+    rm -f -- "$index_rollback"
+  fi
+  if test "$page_rollback_created" = 1 && \
+      { test "$page_attempted" = 0 || test "$page_restored" = 1; }; then
+    rm -f -- "$page_rollback"
+  fi
+}
 
 rollback() {
   status=$?
   trap - ERR INT TERM HUP
   set +e
-  if test "$index_rollback_ready" = 1; then
-    mv -f -- "$index_rollback" "$index_live"
+
+  if test "$index_attempted" = 1; then
+    if owns_installed_bytes "$index_live" "$expected_index_after_sha"; then
+      mv -f -- "$index_rollback" "$index_live"
+      index_restored=1
+    else
+      ownership_conflict=1
+      printf 'rollback refused unknown index bytes; evidence retained: %s\n' "$index_rollback" >&2
+    fi
   fi
-  if test "$page_before_state" = absent; then
-    rm -f -- "$page_live" "$page_pending" "$page_rollback" "$page_public_check"
-    rmdir -- "$page_dir" 2>/dev/null || true
-  elif test "$page_rollback_ready" = 1; then
-    mv -f -- "$page_rollback" "$page_live"
+
+  if test "$page_attempted" = 1; then
+    if owns_installed_bytes "$page_live" "$expected_page_sha"; then
+      if test "$page_before_state" = absent; then
+        rm -f -- "$page_live"
+      else
+        mv -f -- "$page_rollback" "$page_live"
+      fi
+      page_restored=1
+    else
+      ownership_conflict=1
+      printf 'rollback refused unknown page bytes; evidence retained: %s\n' "$page_rollback" >&2
+    fi
   fi
-  rm -f -- "$page_transport" "$index_pending" "$index_guard" "$index_public_check"
+
+  # Remove only deployment-owned pending/check files. Preserve rollback
+  # snapshots for any ownership conflict; remove a snapshot only after its
+  # target was restored or when that target was never attempted.
+  cleanup_owned_nonrollback_artifacts
+  test "$ownership_conflict" = 0 || status=76
   test "$status" -ne 0 || status=1
   exit "$status"
 }
@@ -313,6 +381,9 @@ test "$(sha256sum "$page_transport" | awk '{print $1}')" = "$expected_page_sha"
 test "$(sha256sum "$index_pending" | awk '{print $1}')" = "$expected_index_after_sha"
 test "$(sha256sum "$index_guard" | awk '{print $1}')" = "$expected_index_before_sha"
 
+# Snapshot and guard live state only while the cooperative lock is held.
+test "$(sha256sum "$index_live" | awk '{print $1}')" = "$expected_index_before_sha"
+cmp -s -- "$index_live" "$index_guard"
 if test "$page_before_state" = absent; then
   test ! -e "$page_live"
   mkdir -p -- "$page_dir"
@@ -321,42 +392,61 @@ else
   test "$(sha256sum "$page_live" | awk '{print $1}')" = "$page_before_state"
 fi
 
+test ! -e "$index_rollback"
+test ! -e "$page_rollback"
 cp -p -- "$index_live" "$index_rollback"
-index_rollback_ready=1
+index_rollback_created=1
 if test "$page_before_state" != absent; then
   cp -p -- "$page_live" "$page_rollback"
-  page_rollback_ready=1
+else
+  : >"$page_rollback"
 fi
+page_rollback_created=1
 cp -p -- "$page_transport" "$page_pending"
 chmod 0644 "$page_pending" "$index_pending"
 
-# Install-time compare-and-swap: abort before either live rename if the index moved.
+if test "$failpoint" = before-mutation; then false; fi
+
+# Repeat the index guard immediately before the first live-target mutation.
 test "$(sha256sum "$index_live" | awk '{print $1}')" = "$expected_index_before_sha"
 cmp -s -- "$index_live" "$index_guard"
 
 # Each rename is atomic, but the pair has an irreducible visibility window.
+page_attempted=1
 mv -f -- "$page_pending" "$page_live"
+if test "$failpoint" = unknown-page; then
+  printf 'unknown page\n' >"$page_live"
+  false
+fi
+if test "$failpoint" = after-page; then false; fi
+index_attempted=1
 mv -f -- "$index_pending" "$index_live"
+if test "$failpoint" = unknown-index; then
+  printf 'unknown index\n' >"$index_live"
+  false
+fi
+if test "$failpoint" = after-both; then false; fi
 
 test "$(sha256sum "$page_live" | awk '{print $1}')" = "$expected_page_sha"
 test "$(sha256sum "$index_live" | awk '{print $1}')" = "$expected_index_after_sha"
 grep -Fq 'A Receipt for What We Chose Not to Remember' "$page_live"
 grep -Fq '/ayllu/a-receipt-for-what-we-chose-not-to-remember/' "$index_live"
 
-page_code=$(curl --fail --silent --show-error --location --header 'Cache-Control: no-cache' --output "$page_public_check" --write-out '%{http_code}' https://wamason.com/ayllu/a-receipt-for-what-we-chose-not-to-remember/)
-index_code=$(curl --fail --silent --show-error --location --header 'Cache-Control: no-cache' --output "$index_public_check" --write-out '%{http_code}' https://wamason.com/ayllu/)
+page_code=$(curl --fail --silent --show-error --location --header 'Cache-Control: no-cache' --output "$page_public_check" --write-out '%{http_code}' "$page_url")
+index_code=$(curl --fail --silent --show-error --location --header 'Cache-Control: no-cache' --output "$index_public_check" --write-out '%{http_code}' "$index_url")
 test "$page_code" = 200
 test "$index_code" = 200
 test "$(sha256sum "$page_public_check" | awk '{print $1}')" = "$expected_page_sha"
 test "$(sha256sum "$index_public_check" | awk '{print $1}')" = "$expected_index_after_sha"
 
 trap - ERR INT TERM HUP
-rm -f -- "$page_transport" "$index_guard" "$page_rollback" "$index_rollback" "$page_public_check" "$index_public_check"
+rm -f -- "$page_transport" "$page_pending" "$index_pending" "$index_guard" \
+  "$page_rollback" "$index_rollback" "$page_public_check" "$index_public_check"
 printf 'staged publication validated: page=%s index=%s\n' "$expected_page_sha" "$expected_index_after_sha"
 REMOTE
 ```
 
-Expected: `staged publication validated` with both expected hashes. Any command error or caught signal before that point invokes the trap, restores the prior index, restores the prior page bytes or absent-page state, and exits nonzero. Stop at that first failed safety gate; diagnose and report rather than retrying blindly. The verified full-site archive remains the recovery point if the remote shell itself is forcibly killed before a trap can run.
+Expected: `staged publication validated` with both expected hashes. Any command error or caught signal before that point invokes the trap and exits nonzero. For each attempted target, the trap restores prior bytes or the absent-page state only when the live bytes still equal this deployment's installed hash; it otherwise preserves unknown live bytes and the corresponding rollback evidence. A target whose rename was never attempted is not restored. Stop at that first failed safety gate; diagnose and report rather than retrying blindly. The verified full-site archive remains the recovery point if the remote shell itself is forcibly killed before a trap can run.
 
 - [ ] **Step 5: Independently verify and preserve evidence**
 
