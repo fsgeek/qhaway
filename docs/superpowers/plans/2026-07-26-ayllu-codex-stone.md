@@ -18,9 +18,9 @@
 - Inherit the existing navigation, typography, site tokens, and footer; add no JavaScript or external runtime dependency.
 - Do not rewrite or reorder existing Ayllu entries.
 - Create and verify a timestamped full-site backup before changing live files; do not delete any backup.
-- A failed in-session post-install check triggers restoration from an adjacent rollback copy only while the live target still has this deployment's installed hash; otherwise preserve the unknown live bytes and rollback evidence. The verified full-site backup remains the fallback if the remote shell cannot run its trap.
+- For writers that honor the cooperative deployment lock, a failed in-session post-install check restores from an adjacent rollback copy only while the live target still has this deployment's installed hash; otherwise it preserves the detected unknown live bytes and rollback evidence. Hash/identity checks are best-effort detection for writers that ignore the lock, not an atomic compare-and-restore guarantee. The verified full-site backup remains the fallback if the remote shell cannot run its trap.
 - Require the live index to match both its captured SHA-256 digest and exact captured bytes immediately before the first live-target mutation.
-- Stage pending files and rollback copies adjacent to their targets on the same filesystem, install each target with atomic `mv`, and keep a remote `ERR`/`INT`/`TERM`/`HUP` restoration trap active through server-local and public checks.
+- Before locking, spool inputs only into a server-created unique mode-0700 directory outside the document root. Under the cooperative lock, create pending files, guards, rollback copies, public checks, and HTTP-code outputs adjacent to their targets on the same filesystem; install each target with atomic `mv`; and keep remote `ERR`/`INT`/`TERM`/`HUP` restoration active through validation and exact-path cleanup.
 - Restore the page to its prior bytes when it existed and to an absent-page state when it did not. Remove rollback artifacts only after validation succeeds, using only explicit paths (never globs or broad recursive removal).
 
 ---
@@ -233,29 +233,37 @@ PY
 
 Expected: `index change is insertion-only`.
 
-- [ ] **Step 3: Capture install guards and stage on the target filesystem**
+- [ ] **Step 3: Spool immutable transport inputs outside the document root**
 
 Keep these exact values for the remaining steps:
 
 ```bash
-deploy_id=$(date -u +%Y%m%d-%H%M%S)
 site_dir=/var/www/wamason.com/ayllu
-page_transport="$site_dir/.a-receipt-for-what-we-chose-not-to-remember.$deploy_id.pending"
-index_pending="$site_dir/.index.html.$deploy_id.pending"
-index_guard="$site_dir/.index.html.$deploy_id.guard"
 expected_index_before_sha=$(sha256sum "$stage_dir/index.before.html" | awk '{print $1}')
 expected_index_after_sha=$(sha256sum "$stage_dir/index.after.html" | awk '{print $1}')
 expected_page_sha=$(sha256sum "$stage_dir/page.html" | awk '{print $1}')
-page_before_state=$(ssh activitycontext.work 'set -eu; page=/var/www/wamason.com/ayllu/a-receipt-for-what-we-chose-not-to-remember/index.html; if test -e "$page"; then sha256sum "$page" | cut -d " " -f 1; else printf "absent\n"; fi')
+transport_dir=$(ssh activitycontext.work 'set -eu; umask 077; mktemp -d -- "$HOME/.wamason-ayllu-transport.XXXXXXXX"')
+transport_name=${transport_dir##*/}
+deploy_id=${transport_name#.wamason-ayllu-transport.}
+case $deploy_id in ''|*[!A-Za-z0-9._-]*) printf 'unsafe server-generated deployment id: %s\n' "$deploy_id" >&2; exit 64 ;; esac
+page_dir=$site_dir/a-receipt-for-what-we-chose-not-to-remember
+page_pending=$page_dir/.index.html.$deploy_id.pending
+index_pending=$site_dir/.index.html.$deploy_id.pending
+index_guard=$site_dir/.index.html.$deploy_id.guard
+page_rollback=$page_dir/.index.html.$deploy_id.rollback
+index_rollback=$site_dir/.index.html.$deploy_id.rollback
+page_public_check=$page_dir/.index.html.$deploy_id.public-check
+index_public_check=$site_dir/.index.html.$deploy_id.public-check
+page_code_output=$page_dir/.index.html.$deploy_id.http-code
+index_code_output=$site_dir/.index.html.$deploy_id.http-code
 
-ssh activitycontext.work "set -eu; test ! -e '$page_transport'; test ! -e '$index_pending'; test ! -e '$index_guard'"
-scp "$stage_dir/page.html" "activitycontext.work:$page_transport"
-scp "$stage_dir/index.after.html" "activitycontext.work:$index_pending"
-scp "$stage_dir/index.before.html" "activitycontext.work:$index_guard"
-ssh activitycontext.work "set -eu; test -s '$page_transport'; test -s '$index_pending'; test -s '$index_guard'; test \"\$(sha256sum '$page_transport' | awk '{print \$1}')\" = '$expected_page_sha'; test \"\$(sha256sum '$index_pending' | awk '{print \$1}')\" = '$expected_index_after_sha'; test \"\$(sha256sum '$index_guard' | awk '{print \$1}')\" = '$expected_index_before_sha'"
+scp "$stage_dir/page.html" "activitycontext.work:$transport_dir/page.html"
+scp "$stage_dir/index.after.html" "activitycontext.work:$transport_dir/index.after.html"
+scp "$stage_dir/index.before.html" "activitycontext.work:$transport_dir/index.before.html"
+printf 'transport spooled outside document root: %s\n' "$transport_dir"
 ```
 
-The transport and index files are explicit adjacent paths under the target site, so subsequent copies and renames stay on the same filesystem. This staging does not change either live file.
+The unique directory is created by the server under the lock file's parent and outside `/var/www/wamason.com`. Do not create any pending, guard, rollback, public-check, or HTTP-code path under the site before the remote body acquires the lock. The body validates and removes only the three exact transport entries whose hashes prove they are this invocation's inputs. If spooling fails before the body runs, retain and report the exact unique directory for inspected manual cleanup; do not use a glob or recursive deletion.
 
 - [ ] **Step 4: Install under compare-and-swap and automatic rollback**
 
@@ -264,26 +272,50 @@ Run one remote Bash session. Its trap is installed before the first live-target 
 ```bash
 ssh activitycontext.work bash -s -- \
   "$deploy_id" "$expected_index_before_sha" "$expected_index_after_sha" \
-  "$expected_page_sha" "$page_before_state" \
-  /var/www/wamason.com/ayllu /home/tony/.wamason-ayllu-deploy.lock \
+  "$expected_page_sha" /var/www/wamason.com/ayllu \
+  /home/tony/.wamason-ayllu-deploy.lock "$transport_dir" \
   https://wamason.com/ayllu/a-receipt-for-what-we-chose-not-to-remember/ \
   https://wamason.com/ayllu/ none <<'REMOTE'
-set -euo pipefail
+set -Eeuo pipefail
+set +E
 
 deploy_id=$1
 expected_index_before_sha=$2
 expected_index_after_sha=$3
 expected_page_sha=$4
-page_before_state=$5
-site_dir=$6
-lock_path=$7
+site_dir_input=$5
+lock_path=$6
+transport_dir_input=$7
 page_url=$8
 index_url=$9
 failpoint=${10}
+
+case $deploy_id in
+  ''|*[!A-Za-z0-9._-]*) printf 'unsafe deployment id: %s\n' "$deploy_id" >&2; exit 64 ;;
+esac
+case $failpoint in
+  none|before-mutation|after-page|after-both|unknown-page|unknown-index|missing-page|missing-index|signal-after-page|signal-after-both) ;;
+  *) printf 'invalid deployment failpoint: %s\n' "$failpoint" >&2; exit 64 ;;
+esac
+
+site_dir=$(realpath -m -- "$site_dir_input") || {
+  printf 'cannot canonicalize site directory: %s\n' "$site_dir_input" >&2
+  exit 64
+}
+production_site_dir=$(realpath -m -- /var/www/wamason.com/ayllu)
+case $site_dir in
+  "$production_site_dir"|"$production_site_dir"/*)
+    if test "$failpoint" != none; then
+      printf 'test failpoints are forbidden for canonical production tree: %s\n' "$site_dir" >&2
+      exit 64
+    fi
+    ;;
+esac
+
+lock_dir=$(realpath -m -- "$(dirname -- "$lock_path")")
 page_dir=$site_dir/a-receipt-for-what-we-chose-not-to-remember
 page_live=$page_dir/index.html
 index_live=$site_dir/index.html
-page_transport=$site_dir/.a-receipt-for-what-we-chose-not-to-remember.$deploy_id.pending
 page_pending=$page_dir/.index.html.$deploy_id.pending
 index_pending=$site_dir/.index.html.$deploy_id.pending
 index_guard=$site_dir/.index.html.$deploy_id.guard
@@ -291,97 +323,248 @@ page_rollback=$page_dir/.index.html.$deploy_id.rollback
 index_rollback=$site_dir/.index.html.$deploy_id.rollback
 page_public_check=$page_dir/.index.html.$deploy_id.public-check
 index_public_check=$site_dir/.index.html.$deploy_id.public-check
+page_code_output=$page_dir/.index.html.$deploy_id.http-code
+index_code_output=$site_dir/.index.html.$deploy_id.http-code
 
-exec 9>"$lock_path"
-flock -n 9 || {
-  printf 'deployment lock busy: %s\n' "$lock_path" >&2
-  exit 75
-}
-
-case $failpoint in
-  none|before-mutation|after-page|after-both|unknown-page|unknown-index) ;;
-  *) printf 'invalid deployment failpoint: %s\n' "$failpoint" >&2; exit 64 ;;
-esac
-if test "$site_dir" = /var/www/wamason.com/ayllu && test "$failpoint" != none; then
-  printf 'test failpoints are forbidden for production site: %s\n' "$failpoint" >&2
-  exit 64
-fi
-
+page_transport=
+index_transport=
+guard_transport=
+page_before_state=
+page_dir_created=0
 page_attempted=0
 index_attempted=0
-ownership_conflict=0
-recovery_failure=0
 page_restored=0
 index_restored=0
+ownership_conflict=0
+recovery_failure=0
+transport_dir_owned=0
+page_transport_owned=0
+index_transport_owned=0
+guard_transport_owned=0
+page_pending_created=0
+index_pending_created=0
+index_guard_created=0
 page_rollback_created=0
 index_rollback_created=0
+page_public_check_created=0
+index_public_check_created=0
+page_code_output_created=0
+index_code_output_created=0
+transport_dir_identity=
+page_transport_identity=
+index_transport_identity=
+guard_transport_identity=
+page_dir_identity=
+page_pending_identity=
+index_pending_identity=
+index_guard_identity=
+page_rollback_identity=
+index_rollback_identity=
+page_public_check_identity=
+index_public_check_identity=
+page_code_output_identity=
+index_code_output_identity=
+empty_sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+entry_exists() {
+  test -e "$1" || test -L "$1"
+}
+
+path_identity() {
+  stat -c '%d:%i' -- "$1"
+}
+
+regular_sha() {
+  test -f "$1" && test ! -L "$1" || return 1
+  sha256sum -- "$1" | awk 'NR == 1 { print $1 }'
+}
+
+require_regular_sha() {
+  required_path=$1
+  required_sha=$2
+  required_label=$3
+  if test -L "$required_path" || test ! -f "$required_path"; then
+    printf 'required %s is not an owned regular file: %s\n' "$required_label" "$required_path" >&2
+    return 1
+  fi
+  actual_sha=$(regular_sha "$required_path") || return 1
+  if test "$actual_sha" != "$required_sha"; then
+    printf 'required %s hash mismatch: %s\n' "$required_label" "$required_path" >&2
+    return 1
+  fi
+}
+
+require_absent_entry() {
+  absent_path=$1
+  absent_label=$2
+  if entry_exists "$absent_path"; then
+    printf 'deployment artifact collision at %s: %s\n' "$absent_label" "$absent_path" >&2
+    return 1
+  fi
+}
+
+reserve_owned_file() {
+  reserve_path=$1
+  reserve_label=$2
+  require_absent_entry "$reserve_path" "$reserve_label" || return 1
+  if ! (set -C; : >"$reserve_path") 2>/dev/null; then
+    printf 'could not exclusively create %s: %s\n' "$reserve_label" "$reserve_path" >&2
+    return 1
+  fi
+  if test -L "$reserve_path" || test ! -f "$reserve_path"; then
+    printf 'created %s is not a regular file: %s\n' "$reserve_label" "$reserve_path" >&2
+    return 1
+  fi
+}
+
+same_owned_entry() {
+  owned_path=$1
+  owned_identity=$2
+  test -f "$owned_path" && test ! -L "$owned_path" || return 1
+  test "$(path_identity "$owned_path")" = "$owned_identity"
+}
 
 owns_installed_bytes() {
   target=$1
   installed_sha=$2
-  test -f "$target" || return 1
-  test "$(sha256sum "$target" | awk '{print $1}')" = "$installed_sha"
+  current_sha=$(regular_sha "$target") || return 1
+  test "$current_sha" = "$installed_sha"
+}
+
+owns_snapshot_bytes() {
+  snapshot=$1
+  snapshot_created=$2
+  snapshot_identity=$3
+  snapshot_sha=$4
+  test "$snapshot_created" = 1 || return 1
+  same_owned_entry "$snapshot" "$snapshot_identity" || return 1
+  current_sha=$(regular_sha "$snapshot") || return 1
+  test "$current_sha" = "$snapshot_sha"
+}
+
+cleanup_owned_file() {
+  cleanup_flag_name=$1
+  cleanup_path=$2
+  cleanup_identity=$3
+  cleanup_label=$4
+  test "${!cleanup_flag_name}" = 1 || return 0
+  if ! same_owned_entry "$cleanup_path" "$cleanup_identity"; then
+    recovery_failure=1
+    printf 'cleanup refused changed or missing %s; evidence retained: %s\n' "$cleanup_label" "$cleanup_path" >&2
+    return 1
+  fi
+  if rm -f -- "$cleanup_path"; then
+    printf -v "$cleanup_flag_name" '%s' 0
+    return 0
+  fi
+  recovery_failure=1
+  printf 'cleanup failed removing %s; evidence retained: %s\n' "$cleanup_label" "$cleanup_path" >&2
+  return 1
+}
+
+cleanup_owned_directory() {
+  cleanup_flag_name=$1
+  cleanup_path=$2
+  cleanup_identity=$3
+  cleanup_label=$4
+  test "${!cleanup_flag_name}" = 1 || return 0
+  if test -L "$cleanup_path" || test ! -d "$cleanup_path" || \
+      test "$(path_identity "$cleanup_path")" != "$cleanup_identity"; then
+    recovery_failure=1
+    printf 'cleanup refused changed or missing %s; evidence retained: %s\n' "$cleanup_label" "$cleanup_path" >&2
+    return 1
+  fi
+  if rmdir -- "$cleanup_path"; then
+    printf -v "$cleanup_flag_name" '%s' 0
+    return 0
+  fi
+  recovery_failure=1
+  printf 'cleanup failed removing %s; evidence retained: %s\n' "$cleanup_label" "$cleanup_path" >&2
+  return 1
 }
 
 cleanup_owned_nonrollback_artifacts() {
-  rm -f -- "$page_transport" "$page_pending" "$index_pending" "$index_guard" \
-    "$page_public_check" "$index_public_check"
-  if test "$index_rollback_created" = 1 && \
-      { test "$index_attempted" = 0 || test "$index_restored" = 1; }; then
-    rm -f -- "$index_rollback"
-  fi
-  if test "$page_rollback_created" = 1 && \
-      { test "$page_attempted" = 0 || test "$page_restored" = 1; }; then
-    rm -f -- "$page_rollback"
-  fi
+  cleanup_owned_file page_pending_created "$page_pending" "$page_pending_identity" 'page pending' || :
+  cleanup_owned_file index_pending_created "$index_pending" "$index_pending_identity" 'index pending' || :
+  cleanup_owned_file index_guard_created "$index_guard" "$index_guard_identity" 'index guard' || :
+  cleanup_owned_file page_public_check_created "$page_public_check" "$page_public_check_identity" 'page public check' || :
+  cleanup_owned_file index_public_check_created "$index_public_check" "$index_public_check_identity" 'index public check' || :
+  cleanup_owned_file page_code_output_created "$page_code_output" "$page_code_output_identity" 'page HTTP code output' || :
+  cleanup_owned_file index_code_output_created "$index_code_output" "$index_code_output_identity" 'index HTTP code output' || :
+  cleanup_owned_file page_transport_owned "$page_transport" "$page_transport_identity" 'page transport' || :
+  cleanup_owned_file index_transport_owned "$index_transport" "$index_transport_identity" 'index transport' || :
+  cleanup_owned_file guard_transport_owned "$guard_transport" "$guard_transport_identity" 'guard transport' || :
+  cleanup_owned_directory transport_dir_owned "$transport_dir" "$transport_dir_identity" 'transport directory' || :
 }
 
 rollback() {
-  status=$?
+  status=$1
   trap - ERR INT TERM HUP
   set +e
+  printf 'deployment rollback started: status=%s\n' "$status" >&2
 
   if test "$index_attempted" = 1; then
-    if owns_installed_bytes "$index_live" "$expected_index_after_sha"; then
-      if mv -f -- "$index_rollback" "$index_live"; then
-        index_restored=1
-      else
-        recovery_failure=1
-        printf 'rollback failed restoring index; evidence retained: %s\n' "$index_rollback" >&2
-      fi
-    else
+    if ! entry_exists "$index_live"; then
+      ownership_conflict=1
+      printf 'rollback refused missing index target; evidence retained: %s\n' "$index_rollback" >&2
+    elif ! owns_installed_bytes "$index_live" "$expected_index_after_sha"; then
       ownership_conflict=1
       printf 'rollback refused unknown index bytes; evidence retained: %s\n' "$index_rollback" >&2
+    elif ! owns_snapshot_bytes "$index_rollback" "$index_rollback_created" "$index_rollback_identity" "$expected_index_before_sha"; then
+      recovery_failure=1
+      printf 'rollback snapshot invalid for index; evidence retained: %s\n' "$index_rollback" >&2
+    elif mv -f -- "$index_rollback" "$index_live"; then
+      index_rollback_created=0
+      index_restored=1
+    else
+      recovery_failure=1
+      printf 'rollback failed restoring index; evidence retained: %s\n' "$index_rollback" >&2
     fi
   fi
 
   if test "$page_attempted" = 1; then
-    if owns_installed_bytes "$page_live" "$expected_page_sha"; then
-      if test "$page_before_state" = absent; then
-        if rm -f -- "$page_live"; then
-          page_restored=1
-        else
-          recovery_failure=1
-          printf 'rollback failed removing page; evidence retained: %s\n' "$page_rollback" >&2
-        fi
-      else
-        if mv -f -- "$page_rollback" "$page_live"; then
-          page_restored=1
-        else
-          recovery_failure=1
-          printf 'rollback failed restoring page; evidence retained: %s\n' "$page_rollback" >&2
-        fi
-      fi
-    else
+    if ! entry_exists "$page_live"; then
+      ownership_conflict=1
+      printf 'rollback refused missing page target; evidence retained: %s\n' "$page_rollback" >&2
+    elif ! owns_installed_bytes "$page_live" "$expected_page_sha"; then
       ownership_conflict=1
       printf 'rollback refused unknown page bytes; evidence retained: %s\n' "$page_rollback" >&2
+    elif test "$page_before_state" = absent; then
+      if ! owns_snapshot_bytes "$page_rollback" "$page_rollback_created" "$page_rollback_identity" "$empty_sha"; then
+        recovery_failure=1
+        printf 'rollback marker invalid for absent page; evidence retained: %s\n' "$page_rollback" >&2
+      elif rm -f -- "$page_live"; then
+        page_restored=1
+      else
+        recovery_failure=1
+        printf 'rollback failed removing page; evidence retained: %s\n' "$page_rollback" >&2
+      fi
+    elif ! owns_snapshot_bytes "$page_rollback" "$page_rollback_created" "$page_rollback_identity" "$page_before_state"; then
+      recovery_failure=1
+      printf 'rollback snapshot invalid for page; evidence retained: %s\n' "$page_rollback" >&2
+    elif mv -f -- "$page_rollback" "$page_live"; then
+      page_rollback_created=0
+      page_restored=1
+    else
+      recovery_failure=1
+      printf 'rollback failed restoring page; evidence retained: %s\n' "$page_rollback" >&2
     fi
   fi
 
-  # Remove only deployment-owned pending/check files. Preserve rollback
-  # snapshots for any ownership conflict; remove a snapshot only after its
-  # target was restored or when that target was never attempted.
   cleanup_owned_nonrollback_artifacts
+  if test "$recovery_failure" = 0 && test "$index_rollback_created" = 1 && \
+      { test "$index_attempted" = 0 || test "$index_restored" = 1; }; then
+    cleanup_owned_file index_rollback_created "$index_rollback" "$index_rollback_identity" 'index rollback' || :
+  fi
+  if test "$recovery_failure" = 0 && test "$page_rollback_created" = 1 && \
+      { test "$page_attempted" = 0 || test "$page_restored" = 1; }; then
+    cleanup_owned_file page_rollback_created "$page_rollback" "$page_rollback_identity" 'page rollback' || :
+  fi
+  if test "$recovery_failure" = 0 && test "$page_dir_created" = 1 && \
+      { test "$page_attempted" = 0 || test "$page_restored" = 1; }; then
+    cleanup_owned_directory page_dir_created "$page_dir" "$page_dir_identity" 'page directory' || :
+  fi
+
   if test "$recovery_failure" = 1; then
     status=77
   elif test "$ownership_conflict" = 1; then
@@ -390,83 +573,195 @@ rollback() {
   test "$status" -ne 0 || status=1
   exit "$status"
 }
-trap rollback ERR INT TERM HUP
 
-test -s "$page_transport"
-test -s "$index_pending"
-test -s "$index_guard"
-test "$(sha256sum "$page_transport" | awk '{print $1}')" = "$expected_page_sha"
-test "$(sha256sum "$index_pending" | awk '{print $1}')" = "$expected_index_after_sha"
-test "$(sha256sum "$index_guard" | awk '{print $1}')" = "$expected_index_before_sha"
+signal_rollback() {
+  signal_name=$1
+  signal_status=$2
+  printf 'deployment received %s; rolling back\n' "$signal_name" >&2
+  rollback "$signal_status"
+}
 
-# Snapshot and guard live state only while the cooperative lock is held.
-test "$(sha256sum "$index_live" | awk '{print $1}')" = "$expected_index_before_sha"
-cmp -s -- "$index_live" "$index_guard"
-if test "$page_before_state" = absent; then
-  test ! -e "$page_live"
-  mkdir -p -- "$page_dir"
+exec 9>"$lock_path"
+flock -n 9 || {
+  printf 'deployment lock busy; transport retained at %s\n' "$transport_dir_input" >&2
+  exit 75
+}
+trap 'rollback "$?"' ERR
+trap 'signal_rollback HUP 129' HUP
+trap 'signal_rollback INT 130' INT
+trap 'signal_rollback TERM 143' TERM
+
+if test -L "$transport_dir_input" || test ! -d "$transport_dir_input"; then
+  printf 'transport directory is not an owned real directory: %s\n' "$transport_dir_input" >&2
+  false
+fi
+transport_dir=$(realpath -e -- "$transport_dir_input")
+if test "$(dirname -- "$transport_dir")" != "$lock_dir" || \
+    test "${transport_dir##*/}" != ".wamason-ayllu-transport.$deploy_id" || \
+    test "$(stat -c '%u' -- "$transport_dir")" != "$(id -u)" || \
+    test "$(stat -c '%a' -- "$transport_dir")" != 700; then
+  printf 'transport directory ownership contract failed: %s\n' "$transport_dir" >&2
+  false
+fi
+case $transport_dir in
+  "$site_dir"|"$site_dir"/*)
+    printf 'transport directory must be outside document root: %s\n' "$transport_dir" >&2
+    false
+    ;;
+esac
+page_transport=$transport_dir/page.html
+index_transport=$transport_dir/index.after.html
+guard_transport=$transport_dir/index.before.html
+require_regular_sha "$page_transport" "$expected_page_sha" 'page transport'
+require_regular_sha "$index_transport" "$expected_index_after_sha" 'index transport'
+require_regular_sha "$guard_transport" "$expected_index_before_sha" 'guard transport'
+transport_dir_identity=$(path_identity "$transport_dir")
+page_transport_identity=$(path_identity "$page_transport")
+index_transport_identity=$(path_identity "$index_transport")
+guard_transport_identity=$(path_identity "$guard_transport")
+transport_dir_owned=1
+page_transport_owned=1
+index_transport_owned=1
+guard_transport_owned=1
+
+if test -L "$site_dir" || test ! -d "$site_dir"; then
+  printf 'canonical site directory is not a real directory: %s\n' "$site_dir" >&2
+  false
+fi
+require_regular_sha "$index_live" "$expected_index_before_sha" 'initial live index'
+if entry_exists "$page_dir"; then
+  if test -L "$page_dir" || test ! -d "$page_dir"; then
+    printf 'live page directory is not a real directory: %s\n' "$page_dir" >&2
+    false
+  fi
+  if entry_exists "$page_live"; then
+    if test -L "$page_live" || test ! -f "$page_live"; then
+      printf 'expected live page is neither absent nor a regular file: %s\n' "$page_live" >&2
+      false
+    fi
+    page_before_state=$(regular_sha "$page_live")
+  else
+    page_before_state=absent
+  fi
 else
-  test -f "$page_live"
-  test "$(sha256sum "$page_live" | awk '{print $1}')" = "$page_before_state"
+  page_before_state=absent
+  mkdir -- "$page_dir"
+  page_dir_created=1
+  page_dir_identity=$(path_identity "$page_dir")
 fi
 
-test ! -e "$index_rollback"
-test ! -L "$index_rollback"
-test ! -e "$page_rollback"
-test ! -L "$page_rollback"
-cp -p -- "$index_live" "$index_rollback"
+for artifact in "$page_pending" "$index_pending" "$index_guard" \
+  "$page_rollback" "$index_rollback" "$page_public_check" \
+  "$index_public_check" "$page_code_output" "$index_code_output"; do
+  require_absent_entry "$artifact" 'live-adjacent path'
+done
+
+reserve_owned_file "$page_pending" 'page pending'
+page_pending_created=1
+cp -p -- "$page_transport" "$page_pending"
+page_pending_identity=$(path_identity "$page_pending")
+reserve_owned_file "$index_pending" 'index pending'
+index_pending_created=1
+cp -p -- "$index_transport" "$index_pending"
+index_pending_identity=$(path_identity "$index_pending")
+reserve_owned_file "$index_guard" 'index guard'
+index_guard_created=1
+cp -p -- "$guard_transport" "$index_guard"
+index_guard_identity=$(path_identity "$index_guard")
+reserve_owned_file "$page_public_check" 'page public check'
+page_public_check_created=1
+page_public_check_identity=$(path_identity "$page_public_check")
+reserve_owned_file "$index_public_check" 'index public check'
+index_public_check_created=1
+index_public_check_identity=$(path_identity "$index_public_check")
+reserve_owned_file "$page_code_output" 'page HTTP code output'
+page_code_output_created=1
+page_code_output_identity=$(path_identity "$page_code_output")
+reserve_owned_file "$index_code_output" 'index HTTP code output'
+index_code_output_created=1
+index_code_output_identity=$(path_identity "$index_code_output")
+chmod 0644 "$page_pending" "$index_pending"
+
+cmp -s -- "$index_live" "$index_guard" || {
+  printf 'initial live index bytes do not match transported guard\n' >&2
+  false
+}
+reserve_owned_file "$index_rollback" 'index rollback'
 index_rollback_created=1
+cp -p -- "$index_live" "$index_rollback"
+index_rollback_identity=$(path_identity "$index_rollback")
+reserve_owned_file "$page_rollback" 'page rollback'
+page_rollback_created=1
 if test "$page_before_state" != absent; then
   cp -p -- "$page_live" "$page_rollback"
-else
-  : >"$page_rollback"
 fi
-page_rollback_created=1
-cp -p -- "$page_transport" "$page_pending"
-chmod 0644 "$page_pending" "$index_pending"
+page_rollback_identity=$(path_identity "$page_rollback")
 
 if test "$failpoint" = before-mutation; then false; fi
 
-# Repeat the index guard immediately before the first live-target mutation.
-test "$(sha256sum "$index_live" | awk '{print $1}')" = "$expected_index_before_sha"
-cmp -s -- "$index_live" "$index_guard"
+require_regular_sha "$index_live" "$expected_index_before_sha" 'pre-mutation live index'
+cmp -s -- "$index_live" "$index_guard" || {
+  printf 'pre-mutation live index bytes do not match guard\n' >&2
+  false
+}
+if test "$page_before_state" = absent; then
+  if entry_exists "$page_live"; then
+    printf 'pre-mutation page is no longer absent: %s\n' "$page_live" >&2
+    false
+  fi
+else
+  require_regular_sha "$page_live" "$page_before_state" 'pre-mutation live page'
+fi
 
 # Each rename is atomic, but the pair has an irreducible visibility window.
 page_attempted=1
 mv -f -- "$page_pending" "$page_live"
-if test "$failpoint" = unknown-page; then
-  printf 'unknown page\n' >"$page_live"
-  false
-fi
+page_pending_created=0
+if test "$failpoint" = unknown-page; then printf 'unknown page\n' >"$page_live"; false; fi
+if test "$failpoint" = missing-page; then rm -f -- "$page_live"; false; fi
 if test "$failpoint" = after-page; then false; fi
+if test "$failpoint" = signal-after-page; then kill -STOP "$$"; fi
 index_attempted=1
 mv -f -- "$index_pending" "$index_live"
-if test "$failpoint" = unknown-index; then
-  printf 'unknown index\n' >"$index_live"
-  false
-fi
+index_pending_created=0
+if test "$failpoint" = unknown-index; then printf 'unknown index\n' >"$index_live"; false; fi
+if test "$failpoint" = missing-index; then rm -f -- "$index_live"; false; fi
 if test "$failpoint" = after-both; then false; fi
+if test "$failpoint" = signal-after-both; then kill -STOP "$$"; fi
 
-test "$(sha256sum "$page_live" | awk '{print $1}')" = "$expected_page_sha"
-test "$(sha256sum "$index_live" | awk '{print $1}')" = "$expected_index_after_sha"
+require_regular_sha "$page_live" "$expected_page_sha" 'installed page'
+require_regular_sha "$index_live" "$expected_index_after_sha" 'installed index'
 grep -Fq 'A Receipt for What We Chose Not to Remember' "$page_live"
 grep -Fq '/ayllu/a-receipt-for-what-we-chose-not-to-remember/' "$index_live"
 
-page_code=$(curl --fail --silent --show-error --location --header 'Cache-Control: no-cache' --output "$page_public_check" --write-out '%{http_code}' "$page_url")
-index_code=$(curl --fail --silent --show-error --location --header 'Cache-Control: no-cache' --output "$index_public_check" --write-out '%{http_code}' "$index_url")
+curl --fail --silent --show-error --location --header 'Cache-Control: no-cache' \
+  --output "$page_public_check" --write-out '%{http_code}\n' "$page_url" >"$page_code_output"
+curl --fail --silent --show-error --location --header 'Cache-Control: no-cache' \
+  --output "$index_public_check" --write-out '%{http_code}\n' "$index_url" >"$index_code_output"
+IFS= read -r page_code <"$page_code_output"
+IFS= read -r index_code <"$index_code_output"
 test "$page_code" = 200
 test "$index_code" = 200
-test "$(sha256sum "$page_public_check" | awk '{print $1}')" = "$expected_page_sha"
-test "$(sha256sum "$index_public_check" | awk '{print $1}')" = "$expected_index_after_sha"
+require_regular_sha "$page_public_check" "$expected_page_sha" 'public page'
+require_regular_sha "$index_public_check" "$expected_index_after_sha" 'public index'
 
 trap - ERR INT TERM HUP
-rm -f -- "$page_transport" "$page_pending" "$index_pending" "$index_guard" \
-  "$page_rollback" "$index_rollback" "$page_public_check" "$index_public_check"
+set +e
+cleanup_owned_nonrollback_artifacts
+if test "$recovery_failure" = 0; then
+  cleanup_owned_file index_rollback_created "$index_rollback" "$index_rollback_identity" 'index rollback' || :
+fi
+if test "$recovery_failure" = 0; then
+  cleanup_owned_file page_rollback_created "$page_rollback" "$page_rollback_identity" 'page rollback' || :
+fi
+if test "$recovery_failure" = 1; then
+  exit 77
+fi
 printf 'staged publication validated: page=%s index=%s\n' "$expected_page_sha" "$expected_index_after_sha"
 REMOTE
 ```
 
-Expected: `staged publication validated` with both expected hashes. Any command error or caught signal before that point invokes the trap exactly once and exits nonzero. For each attempted target, the trap restores prior bytes or the absent-page state only when the live bytes still equal this deployment's installed hash; it otherwise preserves unknown live bytes and the corresponding rollback evidence with status 76. A failed restore/remove operation retains its evidence and exits with recovery-failure status 77. A target whose rename was never attempted is not restored. Stop at that first failed safety gate; diagnose and report rather than retrying blindly. The verified full-site archive remains the recovery point if the remote shell itself is forcibly killed before a trap can run.
+Expected: `staged publication validated` with both expected hashes. Any command error or caught signal before that point invokes the trap exactly once and exits nonzero. For cooperative lock participants, each attempted target is restored to prior bytes or the absent-page state only while the live bytes still equal this deployment's installed hash. A detected unknown or missing target is preserved with corresponding rollback evidence and status 76. Restore, removal, or owned-artifact cleanup failure retains available evidence and takes precedence as status 77. A target whose rename was never attempted is not restored. Hash and identity checks remain best-effort against a writer that ignores the lock because the check and rename/removal are not atomic together. Stop at the first failed safety gate; diagnose and report rather than retrying blindly. The verified full-site archive remains the recovery point if the remote shell itself is forcibly killed before a trap can run.
 
 - [ ] **Step 5: Independently verify and preserve evidence**
 
@@ -479,10 +774,24 @@ cmp "$stage_dir/page.html" "$stage_dir/public-page.html"
 cmp "$stage_dir/index.after.html" "$stage_dir/public-index.html"
 python "$stage_dir/validate_page.py" "$stage_dir/public-page.html" .superpowers/sdd/2026-07-26-ayllu-codex-stone/author-copy.md
 grep -Fq '/ayllu/a-receipt-for-what-we-chose-not-to-remember/' "$stage_dir/public-index.html"
-ssh activitycontext.work "set -eu; test -s '$backup_path'; tar -tzf '$backup_path' >/dev/null; test ! -e '$page_transport'; test ! -e '$index_pending'; test ! -e '$index_guard'; test ! -e '/var/www/wamason.com/ayllu/.index.html.$deploy_id.rollback'; test ! -e '/var/www/wamason.com/ayllu/a-receipt-for-what-we-chose-not-to-remember/.index.html.$deploy_id.rollback'"
+ssh activitycontext.work bash -s -- "$backup_path" "$transport_dir" \
+  "$page_pending" "$index_pending" "$index_guard" "$page_rollback" \
+  "$index_rollback" "$page_public_check" "$index_public_check" \
+  "$page_code_output" "$index_code_output" <<'REMOTE_CHECK'
+set -eu
+backup_path=$1
+transport_dir=$2
+shift 2
+test -s "$backup_path"
+tar -tzf "$backup_path" >/dev/null
+test ! -e "$transport_dir" && test ! -L "$transport_dir"
+for artifact in "$@"; do
+  test ! -e "$artifact" && test ! -L "$artifact"
+done
+REMOTE_CHECK
 ```
 
-Expected: two HTTP `200` responses, byte-for-byte equality for both public files, expanded validator success, readable backup, and absence of every exact pending/guard/rollback path. Preserve the verified backups and local staging directory through final reporting.
+Expected: two HTTP `200` responses, byte-for-byte equality for both public files, expanded validator success, readable backup, and absence (including dangling symlinks) of the exact transport, pending, guard, rollback, public-check, and HTTP-code paths. Preserve the verified backups and local staging directory through final reporting.
 
 ---
 

@@ -4,39 +4,42 @@ Date: 2026-07-26
 
 ## Purpose
 
-Repair the reusable Ayllu publication runbook without changing the successfully deployed stone. The current runbook detects some concurrent index changes but can then overwrite the detected change during rollback. Recovery must never erase bytes whose ownership is unknown.
+Repair the reusable Ayllu publication runbook without changing the successfully deployed stone. The current runbook detects some concurrent index changes but can then overwrite the detected change during rollback. For cooperative participants, recovery may erase only entries created or live bytes installed by the lock holder. Hash checks also detect many noncooperative changes, but they are best-effort detection rather than an atomic ownership primitive.
 
 This repair serves the ayllu by making operational authority explicit: a deployment may restore only state it demonstrably replaced.
 
 ## Chosen Approach
 
-Use a cooperative exclusive `flock` plus per-target mutation tracking and byte-ownership checks. The lock is held across snapshot, precondition checks, staging, live replacement, validation, rollback or cleanup. It lives outside the public document root and is shared by every future invocation of this runbook.
+Use a cooperative exclusive `flock` plus per-entry creation tracking, per-target mutation tracking, and byte-ownership checks. Uploads first spool into a server-created, mode-0700 unique transport directory outside the document root. The lock is then held across transport validation, live-state guards, creation of every live-adjacent staging/check/snapshot entry, live replacement, validation, rollback, and cleanup. It lives outside the public document root and is shared by every future invocation of this runbook.
 
 Two alternatives are rejected for this focused repair:
 
 - A versioned release tree and single symlink swap would provide a cleaner whole-release atomic boundary, but it changes the architecture and deployment model of the entire static site.
 - Check-then-write without a lock retains a race between comparison and rename and cannot safely claim concurrency protection.
 
-The cooperative lock cannot constrain a writer that ignores it. Ownership checks therefore remain required even while the lock is held.
+The cooperative lock cannot constrain a writer that ignores it. Ownership hashes and entry identities therefore remain useful detection in depth, but a hash-check followed by `mv` or `rm` has an unavoidable time-of-check/time-of-use interval. The runbook makes no absolute preservation claim for writers that ignore the lock; eliminating that race requires a different atomic publication architecture.
 
 ## Lock and Snapshot Boundary
 
 The remote deployment opens `/home/tony/.wamason-ayllu-deploy.lock` on a dedicated file descriptor and acquires it with non-blocking `flock`. Failure to acquire the lock makes no mutation and exits nonzero.
 
+Before acquiring the lock, the workflow may only create its unique transport directory outside the document root and spool the three immutable inputs into it. It creates no adjacent pending, guard, snapshot, public-check, or HTTP-code path.
+
 Only after acquiring the lock may the runbook:
 
-1. verify exact pending-file hashes;
+1. verify the exact transport entries and hashes;
 2. verify the expected live index and page state;
-3. create adjacent rollback snapshots;
-4. replace live targets;
-5. validate server-local and public bytes; and
-6. remove deployment-owned temporary files and release the lock.
+3. reject regular-file and dangling-symlink collisions for every exact live-adjacent path;
+4. create adjacent pending files, guards, rollback snapshots, public checks, and HTTP-code outputs while recording creation ownership;
+5. replace live targets;
+6. validate server-local and public bytes; and
+7. remove only deployment-owned entries and release the lock.
 
-The live-state guard and snapshot occur inside the same cooperative critical section.
+The live-state guard and snapshot occur inside the same cooperative critical section. The requested `site_dir` is canonicalized with `realpath`; test failpoints are rejected for the canonical production tree and all descendants, including alternate spellings and symlink aliases.
 
 ## Mutation Ownership
 
-Track page and index mutations separately. A target becomes deployment-owned only after its atomic rename succeeds.
+Track page and index mutations separately. A target becomes deployment-owned only after its atomic rename succeeds. Track creation of every transport, pending, guard, rollback, public-check, and HTTP-code entry separately; cleanup may name an entry only while its creation flag and recorded identity still establish this invocation's ownership. Any pre-existing directory entry, including a dangling symlink, is a collision. A symlink at an expected-absent live-page path is not absence and stops the deployment.
 
 Rollback considers a target only when its mutation flag is set. Before restoring its snapshot, rollback compares the current live bytes with the exact bytes installed by this deployment:
 
@@ -46,19 +49,20 @@ Rollback considers a target only when its mutation flag is set. Before restoring
 
 For an originally absent page, removal is permitted only when the page mutation flag is set and the current page hash still matches the deployment's installed hash.
 
-Rollback exits nonzero in all cases. An ownership conflict takes precedence over automatic cleanup so evidence remains available.
+Rollback exits nonzero in all cases. An ownership conflict takes precedence over ordinary cleanup so evidence remains available; a restore, removal, or owned-artifact cleanup failure takes the distinct higher-priority recovery status 77 and also retains evidence.
 
 ## Atomicity Claim
 
-Each same-filesystem rename is atomic; the page/index pair is not. The runbook is a staged, recoverable, cooperatively serialized deployment, not a true two-file transaction. A small visibility window remains between the two renames. Eliminating it requires the rejected versioned-release/single-pointer architecture.
+Each same-filesystem rename is atomic; the page/index pair is not. The runbook is a staged, recoverable, cooperatively serialized deployment, not a true two-file transaction. A small visibility window remains between the two renames. The same architecture cannot provide an atomic compare-and-restore against an uncooperative writer. Eliminating both limitations requires the rejected versioned-release/single-pointer architecture or another genuine atomic publication primitive.
 
 ## Verification
 
 The repair is documentation and executable-runbook work. Verification must include:
 
 - shell syntax validation of the extracted remote script;
-- a temporary-directory harness that exercises success, lock contention, failure before mutation, failure after page mutation, failure after both mutations, and an injected unknown-byte conflict;
-- assertions that pre-mutation failures never restore, owned bytes restore, and unknown bytes survive unchanged with rollback evidence retained;
+- a temporary-directory harness that exercises success, lock contention, failure before mutation, failure after page mutation, failure after both mutations, injected unknown or missing live bytes, signals, cleanup failures, and mixed recovery outcomes;
+- assertions that transport stays outside the document root, no live-adjacent path exists before lock acquisition, the lock spans staging through success or rollback cleanup, pre-mutation failures never restore, owned bytes restore, and detected unknown bytes survive with rollback evidence retained;
+- canonical production-alias rejection, inherited-`errtrace` single-rollback coverage, regular/dangling collision coverage for every exact artifact class, and explicit ordering/diagnostic assertions;
 - the existing qhaway test suite;
 - signed tracked commits;
 - independent review of the exact fix diff.
