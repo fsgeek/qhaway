@@ -268,7 +268,7 @@ ssh activitycontext.work bash -s -- \
   /var/www/wamason.com/ayllu /home/tony/.wamason-ayllu-deploy.lock \
   https://wamason.com/ayllu/a-receipt-for-what-we-chose-not-to-remember/ \
   https://wamason.com/ayllu/ none <<'REMOTE'
-set -Eeuo pipefail
+set -euo pipefail
 
 deploy_id=$1
 expected_index_before_sha=$2
@@ -310,6 +310,7 @@ fi
 page_attempted=0
 index_attempted=0
 ownership_conflict=0
+recovery_failure=0
 page_restored=0
 index_restored=0
 page_rollback_created=0
@@ -342,8 +343,12 @@ rollback() {
 
   if test "$index_attempted" = 1; then
     if owns_installed_bytes "$index_live" "$expected_index_after_sha"; then
-      mv -f -- "$index_rollback" "$index_live"
-      index_restored=1
+      if mv -f -- "$index_rollback" "$index_live"; then
+        index_restored=1
+      else
+        recovery_failure=1
+        printf 'rollback failed restoring index; evidence retained: %s\n' "$index_rollback" >&2
+      fi
     else
       ownership_conflict=1
       printf 'rollback refused unknown index bytes; evidence retained: %s\n' "$index_rollback" >&2
@@ -353,11 +358,20 @@ rollback() {
   if test "$page_attempted" = 1; then
     if owns_installed_bytes "$page_live" "$expected_page_sha"; then
       if test "$page_before_state" = absent; then
-        rm -f -- "$page_live"
+        if rm -f -- "$page_live"; then
+          page_restored=1
+        else
+          recovery_failure=1
+          printf 'rollback failed removing page; evidence retained: %s\n' "$page_rollback" >&2
+        fi
       else
-        mv -f -- "$page_rollback" "$page_live"
+        if mv -f -- "$page_rollback" "$page_live"; then
+          page_restored=1
+        else
+          recovery_failure=1
+          printf 'rollback failed restoring page; evidence retained: %s\n' "$page_rollback" >&2
+        fi
       fi
-      page_restored=1
     else
       ownership_conflict=1
       printf 'rollback refused unknown page bytes; evidence retained: %s\n' "$page_rollback" >&2
@@ -368,7 +382,11 @@ rollback() {
   # snapshots for any ownership conflict; remove a snapshot only after its
   # target was restored or when that target was never attempted.
   cleanup_owned_nonrollback_artifacts
-  test "$ownership_conflict" = 0 || status=76
+  if test "$recovery_failure" = 1; then
+    status=77
+  elif test "$ownership_conflict" = 1; then
+    status=76
+  fi
   test "$status" -ne 0 || status=1
   exit "$status"
 }
@@ -393,7 +411,9 @@ else
 fi
 
 test ! -e "$index_rollback"
+test ! -L "$index_rollback"
 test ! -e "$page_rollback"
+test ! -L "$page_rollback"
 cp -p -- "$index_live" "$index_rollback"
 index_rollback_created=1
 if test "$page_before_state" != absent; then
@@ -446,7 +466,7 @@ printf 'staged publication validated: page=%s index=%s\n' "$expected_page_sha" "
 REMOTE
 ```
 
-Expected: `staged publication validated` with both expected hashes. Any command error or caught signal before that point invokes the trap and exits nonzero. For each attempted target, the trap restores prior bytes or the absent-page state only when the live bytes still equal this deployment's installed hash; it otherwise preserves unknown live bytes and the corresponding rollback evidence. A target whose rename was never attempted is not restored. Stop at that first failed safety gate; diagnose and report rather than retrying blindly. The verified full-site archive remains the recovery point if the remote shell itself is forcibly killed before a trap can run.
+Expected: `staged publication validated` with both expected hashes. Any command error or caught signal before that point invokes the trap exactly once and exits nonzero. For each attempted target, the trap restores prior bytes or the absent-page state only when the live bytes still equal this deployment's installed hash; it otherwise preserves unknown live bytes and the corresponding rollback evidence with status 76. A failed restore/remove operation retains its evidence and exits with recovery-failure status 77. A target whose rename was never attempted is not restored. Stop at that first failed safety gate; diagnose and report rather than retrying blindly. The verified full-site archive remains the recovery point if the remote shell itself is forcibly killed before a trap can run.
 
 - [ ] **Step 5: Independently verify and preserve evidence**
 
