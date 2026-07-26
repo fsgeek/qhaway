@@ -39,13 +39,16 @@ The index gloss summarizes the field note without resolving its uncertainty or t
 
 ## Deployment and Recovery
 
+This is a staged, recoverable two-file publication, not a truly transactional one. Each file is installed with an atomic rename from an adjacent temporary file on the same filesystem, but readers can observe a small interval in which only one of the page and index has changed. Eliminating that interval requires a different architecture, such as a versioned release directory with one atomically switched symlink.
+
 1. Connect using `ssh activitycontext.work`.
-2. Before editing, create a timestamped `/home/tony/wamason-backup-YYYYMMDD-HHMMSS.tar.gz` containing `/var/www/wamason.com`, and verify the archive can be listed.
-3. Build the new page and amended index as temporary files on the server.
-4. Validate expected HTML structure, links, title, canonical URL, and index reference before replacing live files.
-5. Install the new page and index.
-6. Verify both local server files and public HTTPS responses with `curl`, including the title and reciprocal link from the index.
-7. If a validation or public check fails, restore the affected files from the verified backup and report the failure.
+2. Before editing, create a timestamped `/home/tony/wamason-backup-YYYYMMDD-HHMMSS.tar.gz` containing `/var/www/wamason.com`, verify that the archive can be listed, and preserve every earlier backup.
+3. Capture the live index bytes and SHA-256 digest. Stage the page, index, and captured index guard under explicit adjacent temporary names within `/var/www/wamason.com/ayllu`; do not stage on another filesystem.
+4. Validate the staged page and index before installation. Require the exact title, description, canonical URL, section order, author-copy rendering, five public-provenance links, local stylesheet, absence of scripts or external runtime resources, and insertion-only index change. Verify that each public-provenance URL returns HTTP 200.
+5. In one remote Bash session, install an `ERR`, `INT`, `TERM`, and `HUP` trap before the first live-target mutation. Immediately before mutation, require both the captured index digest and a byte comparison with the staged index guard to match the live index. Create explicit adjacent rollback copies of the current index and of the page when it exists, and record whether the page was originally absent.
+6. Install each file with `mv` from its adjacent temporary path. The rename is atomic for that file only; the page/index pair still has the visibility window described above.
+7. While the trap remains active, verify the server-local files and public HTTPS responses byte-for-byte against the staged hashes, including both HTTP 200 responses and the reciprocal index link. Any validation error or caught signal restores the prior index and either restores the prior page or removes the newly created page to recover the recorded absent-page state.
+8. Only after all server-local and public checks succeed, disable the trap and remove the exact pending, guard, public-check, and rollback paths. Do not use globs or broad recursive removal. Retain the verified full-site backups and local staging directory.
 
 No existing entry is rewritten, and no backup is deleted as part of this change.
 
@@ -54,6 +57,7 @@ No existing entry is rewritten, and no backup is deleted as part of this change.
 - The backup exists and is readable.
 - The new public URL returns success and contains the intended title, attribution, and field note.
 - The Ayllu index returns success and links to the new page with the intended gloss.
+- The page closes with the author-provided Public provenance section immediately before the Signed coda, and all five evidence links return HTTP 200.
 - Existing navigation and neighboring entries remain intact.
 - The page contains no credentials, private conversation bodies, or unsupported claim of identity or consciousness.
 - The deployed writing remains recognizably this instance's stone rather than Tony's editorial reconstruction.
