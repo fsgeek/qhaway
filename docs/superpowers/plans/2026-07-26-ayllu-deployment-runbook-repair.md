@@ -16,6 +16,7 @@
 - A cooperative target may be restored or removed only if this deployment attempted its replacement and its current bytes equal this deployment's installed SHA-256.
 - Detected unknown or absent current bytes after a mutation attempt are not overwritten; retain the corresponding rollback snapshot and exit nonzero. These checks are best-effort for a writer that ignores `flock` because the hash check and later `mv`/`rm` are not one atomic primitive.
 - A target whose mutation was never attempted must never be restored.
+- Capture the expected live page state before waiting for the lock as either `absent` or an exact SHA-256. Reject symlinks and non-regular entries during capture, then require that captured state both immediately after lock acquisition and immediately before mutation so a queued deployment cannot overwrite a cooperative predecessor.
 - Pre-lock transport spooling may occur only in a server-created unique directory outside the document root. Every live-adjacent stage, snapshot, guard, validation output, mutation, rollback, and cleanup occurs only after the cooperative lock is acquired.
 - Continue to describe the page/index pair as staged, recoverable, and cooperatively serialized—not transactional or pair-atomic.
 - Preserve the exact public stone and index bytes already deployed.
@@ -58,8 +59,9 @@ The harness supplies fixture paths and expected hashes to the extracted body and
 7. `unknown-index`: after both replacements, inject different index bytes before failure; unknown index survives, its rollback snapshot remains; page restores only if its live bytes still equal this deployment's installed page hash.
 8. `originally-absent-page`: after installing into an absent page path, failure removes it only while its bytes equal the installed page hash.
 9. `unknown-originally-absent-page`: after installing into an absent path, inject unknown bytes; failure preserves the page and evidence.
+10. `cooperative-page-lost-update`: deployment B captures the original page, deployment A changes the page while holding the cooperative lock, then B acquires the lock and exits nonzero without changing A's page or the index.
 
-Each case asserts exit status, exact live hashes, presence or absence of exact rollback paths, and absence of broad/glob cleanup. Add deterministic coverage for canonical production aliases/descendants, inherited `SHELLOPTS=errtrace`, signal rollback, full lock lifetime through success and rollback cleanup, regular and dangling collisions for every transport/pending/guard/rollback/public-check/HTTP-code path, dangling absent-page state, validation ordering, missing current targets, cleanup failure status 77, and mixed conflict/recovery-failure precedence. Fixtures stay below `mktemp -d`; production-alias tests use only canonicalization and never create or mutate `/var/www`.
+Each case asserts exit status, exact live hashes, presence or absence of exact rollback paths, and absence of broad/glob cleanup. Add deterministic coverage for canonical production aliases/descendants, inherited `SHELLOPTS=errtrace`, signal rollback, full lock lifetime through success and rollback cleanup, regular and dangling collisions for every transport/pending/guard/rollback/public-check/HTTP-code path, dangling absent-page state, validation ordering, missing current targets, cleanup failure status 77, mixed conflict/recovery-failure precedence, and the queued cooperative page-precondition case. Fixtures stay below `mktemp -d`; production-alias tests use only canonicalization and never create or mutate `/var/www`.
 
 Run:
 
@@ -136,11 +138,12 @@ repeat_index_and_page_guards_immediately_before_mutation
 
 The completed body must additionally:
 
-- accept explicit fixture-overridable `site_dir`, `lock_path`, page/index URLs, and a test failpoint argument; the production invocation supplies the exact live paths, live URLs, and `none`;
+- accept explicit caller-captured expected page state plus fixture-overridable `site_dir`, `lock_path`, page/index URLs, and a test failpoint argument; the production invocation supplies the exact live paths, live URLs, and `none`;
 - canonicalize `site_dir` with `realpath` and reject any non-`none` failpoint for the canonical production tree or a descendant;
 - validate the three exact regular, non-symlink transport entries before live snapshot;
 - create every live-adjacent path only after locking, reject both regular and dangling collisions, and record a creation flag plus entry identity for exact cleanup;
 - snapshot and guard live state only after acquiring the lock;
+- reject a locked page that differs from the caller-captured expected state and repeat that same page guard immediately before mutation;
 - create rollback copies only after guards pass;
 - set `page_attempted=1` immediately before the page rename and `index_attempted=1` immediately before the index rename;
 - provide fixture-only failure/signal points for the named matrix; all are forbidden for canonical production paths;
@@ -160,7 +163,7 @@ bash -n .superpowers/sdd/2026-07-26-ayllu-deployment-runbook-repair/runbook-unde
 bash .superpowers/sdd/2026-07-26-ayllu-deployment-runbook-repair/test-runbook.sh
 ```
 
-Expected: syntax checks exit 0; all 53 focused cases print `PASS`; final output reports `53 passed, 0 failed`.
+Expected: syntax checks exit 0; all 54 focused cases print `PASS`; final output reports `54 passed, 0 failed`.
 
 - [ ] **Step 4: Verify the documented production invocation without executing it**
 

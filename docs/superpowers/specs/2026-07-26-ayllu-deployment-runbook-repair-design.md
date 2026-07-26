@@ -23,19 +23,19 @@ The cooperative lock cannot constrain a writer that ignores it. Ownership hashes
 
 The remote deployment opens `/home/tony/.wamason-ayllu-deploy.lock` on a dedicated file descriptor and acquires it with non-blocking `flock`. Failure to acquire the lock makes no mutation and exits nonzero.
 
-Before acquiring the lock, the workflow may only create its unique transport directory outside the document root and spool the three immutable inputs into it. It creates no adjacent pending, guard, snapshot, public-check, or HTTP-code path.
+Before acquiring the lock, the workflow captures the expected live page state as either `absent` or an exact SHA-256, then creates its unique transport directory outside the document root and spools the three immutable inputs into it. The capture rejects every symlink, including a dangling one, and every non-regular entry. Pre-lock work creates no adjacent pending, guard, snapshot, public-check, or HTTP-code path.
 
 Only after acquiring the lock may the runbook:
 
 1. verify the exact transport entries and hashes;
-2. verify the expected live index and page state;
+2. verify the expected live index and caller-captured page state;
 3. reject regular-file and dangling-symlink collisions for every exact live-adjacent path;
 4. create adjacent pending files, guards, rollback snapshots, public checks, and HTTP-code outputs while recording creation ownership;
 5. replace live targets;
 6. validate server-local and public bytes; and
 7. remove only deployment-owned entries and release the lock.
 
-The live-state guard and snapshot occur inside the same cooperative critical section. The requested `site_dir` is canonicalized with `realpath`; test failpoints are rejected for the canonical production tree and all descendants, including alternate spellings and symlink aliases.
+The live-state guard and snapshot occur inside the same cooperative critical section. A queued deployment must match the page state its caller captured before waiting for the lock; it may not silently adopt a predecessor's newly published page as its rollback baseline. The same expected page state is checked again immediately before mutation. The requested `site_dir` is canonicalized with `realpath`; test failpoints are rejected for the canonical production tree and all descendants, including alternate spellings and symlink aliases.
 
 ## Mutation Ownership
 
@@ -63,6 +63,7 @@ The repair is documentation and executable-runbook work. Verification must inclu
 - a temporary-directory harness that exercises success, lock contention, failure before mutation, failure after page mutation, failure after both mutations, injected unknown or missing live bytes, signals, cleanup failures, and mixed recovery outcomes;
 - assertions that transport stays outside the document root, no live-adjacent path exists before lock acquisition, the lock spans staging through success or rollback cleanup, pre-mutation failures never restore, owned bytes restore, and detected unknown bytes survive with rollback evidence retained;
 - canonical production-alias rejection, inherited-`errtrace` single-rollback coverage, regular/dangling collision coverage for every exact artifact class, and explicit ordering/diagnostic assertions;
+- a queued cooperative-deployment regression in which deployment B captures the old page, deployment A changes it under the same lock, and B is rejected after acquiring the lock without mutating A's page or the index;
 - the existing qhaway test suite;
 - signed tracked commits;
 - independent review of the exact fix diff.

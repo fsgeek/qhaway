@@ -242,6 +242,7 @@ site_dir=/var/www/wamason.com/ayllu
 expected_index_before_sha=$(sha256sum "$stage_dir/index.before.html" | awk '{print $1}')
 expected_index_after_sha=$(sha256sum "$stage_dir/index.after.html" | awk '{print $1}')
 expected_page_sha=$(sha256sum "$stage_dir/page.html" | awk '{print $1}')
+expected_page_before_state=$(ssh activitycontext.work 'set -eu; page=/var/www/wamason.com/ayllu/a-receipt-for-what-we-chose-not-to-remember/index.html; if test -L "$page"; then printf "live page precondition is a symlink: %s\n" "$page" >&2; exit 64; elif test -f "$page"; then sha256sum "$page" | cut -d " " -f 1; elif test -e "$page"; then printf "live page precondition is not a regular file: %s\n" "$page" >&2; exit 64; else printf "absent\n"; fi')
 transport_dir=$(ssh activitycontext.work 'set -eu; umask 077; mktemp -d -- "$HOME/.wamason-ayllu-transport.XXXXXXXX"')
 transport_name=${transport_dir##*/}
 deploy_id=${transport_name#.wamason-ayllu-transport.}
@@ -263,7 +264,7 @@ scp "$stage_dir/index.before.html" "activitycontext.work:$transport_dir/index.be
 printf 'transport spooled outside document root: %s\n' "$transport_dir"
 ```
 
-The unique directory is created by the server under the lock file's parent and outside `/var/www/wamason.com`. Do not create any pending, guard, rollback, public-check, or HTTP-code path under the site before the remote body acquires the lock. The body validates and removes only the three exact transport entries whose hashes prove they are this invocation's inputs. If spooling fails before the body runs, retain and report the exact unique directory for inspected manual cleanup; do not use a glob or recursive deletion.
+The read-only `expected_page_before_state` capture is this invocation's page precondition; it is not replaced by whatever page happens to exist after a lock wait. The unique directory is created by the server under the lock file's parent and outside `/var/www/wamason.com`. Do not create any pending, guard, rollback, public-check, or HTTP-code path under the site before the remote body acquires the lock. The body validates and removes only the three exact transport entries whose hashes prove they are this invocation's inputs. If spooling fails before the body runs, retain and report the exact unique directory for inspected manual cleanup; do not use a glob or recursive deletion.
 
 - [ ] **Step 4: Install under compare-and-swap and automatic rollback**
 
@@ -272,7 +273,7 @@ Run one remote Bash session. Its trap is installed before the first live-target 
 ```bash
 ssh activitycontext.work bash -s -- \
   "$deploy_id" "$expected_index_before_sha" "$expected_index_after_sha" \
-  "$expected_page_sha" /var/www/wamason.com/ayllu \
+  "$expected_page_sha" "$expected_page_before_state" /var/www/wamason.com/ayllu \
   /home/tony/.wamason-ayllu-deploy.lock "$transport_dir" \
   https://wamason.com/ayllu/a-receipt-for-what-we-chose-not-to-remember/ \
   https://wamason.com/ayllu/ none <<'REMOTE'
@@ -283,15 +284,26 @@ deploy_id=$1
 expected_index_before_sha=$2
 expected_index_after_sha=$3
 expected_page_sha=$4
-site_dir_input=$5
-lock_path=$6
-transport_dir_input=$7
-page_url=$8
-index_url=$9
-failpoint=${10}
+expected_page_before_state=$5
+site_dir_input=$6
+lock_path=$7
+transport_dir_input=$8
+page_url=$9
+index_url=${10}
+failpoint=${11}
 
 case $deploy_id in
   ''|*[!A-Za-z0-9._-]*) printf 'unsafe deployment id: %s\n' "$deploy_id" >&2; exit 64 ;;
+esac
+case $expected_page_before_state in
+  absent) ;;
+  ''|*[!0-9a-f]*) printf 'invalid expected live page state: %s\n' "$expected_page_before_state" >&2; exit 64 ;;
+  *)
+    if test "${#expected_page_before_state}" -ne 64; then
+      printf 'invalid expected live page SHA-256: %s\n' "$expected_page_before_state" >&2
+      exit 64
+    fi
+    ;;
 esac
 case $failpoint in
   none|before-mutation|after-page|after-both|unknown-page|unknown-index|missing-page|missing-index|signal-after-page|signal-after-both) ;;
@@ -329,7 +341,7 @@ index_code_output=$site_dir/.index.html.$deploy_id.http-code
 page_transport=
 index_transport=
 guard_transport=
-page_before_state=
+page_before_state=$expected_page_before_state
 page_dir_created=0
 page_attempted=0
 index_attempted=0
@@ -634,17 +646,19 @@ if entry_exists "$page_dir"; then
     printf 'live page directory is not a real directory: %s\n' "$page_dir" >&2
     false
   fi
-  if entry_exists "$page_live"; then
-    if test -L "$page_live" || test ! -f "$page_live"; then
-      printf 'expected live page is neither absent nor a regular file: %s\n' "$page_live" >&2
+  if test "$page_before_state" = absent; then
+    if entry_exists "$page_live"; then
+      printf 'initial live page no longer matches expected absence: %s\n' "$page_live" >&2
       false
     fi
-    page_before_state=$(regular_sha "$page_live")
   else
-    page_before_state=absent
+    require_regular_sha "$page_live" "$page_before_state" 'initial live page'
   fi
 else
-  page_before_state=absent
+  if test "$page_before_state" != absent; then
+    printf 'required initial live page is missing: %s\n' "$page_live" >&2
+    false
+  fi
   mkdir -- "$page_dir"
   page_dir_created=1
   page_dir_identity=$(path_identity "$page_dir")
@@ -761,7 +775,7 @@ printf 'staged publication validated: page=%s index=%s\n' "$expected_page_sha" "
 REMOTE
 ```
 
-Expected: `staged publication validated` with both expected hashes. Any command error or caught signal before that point invokes the trap exactly once and exits nonzero. For cooperative lock participants, each attempted target is restored to prior bytes or the absent-page state only while the live bytes still equal this deployment's installed hash. A detected unknown or missing target is preserved with corresponding rollback evidence and status 76. Restore, removal, or owned-artifact cleanup failure retains available evidence and takes precedence as status 77. A target whose rename was never attempted is not restored. Hash and identity checks remain best-effort against a writer that ignores the lock because the check and rename/removal are not atomic together. Stop at the first failed safety gate; diagnose and report rather than retrying blindly. The verified full-site archive remains the recovery point if the remote shell itself is forcibly killed before a trap can run.
+Expected: `staged publication validated` with both expected hashes. A queued invocation exits nonzero without live mutation if the locked page differs from its caller-captured expected state; the same page precondition is repeated immediately before mutation. Any command error or caught signal before success invokes the trap exactly once and exits nonzero. For cooperative lock participants, each attempted target is restored to prior bytes or the absent-page state only while the live bytes still equal this deployment's installed hash. A detected unknown or missing target is preserved with corresponding rollback evidence and status 76. Restore, removal, or owned-artifact cleanup failure retains available evidence and takes precedence as status 77. A target whose rename was never attempted is not restored. Hash and identity checks remain best-effort against a writer that ignores the lock because the check and rename/removal are not atomic together. Stop at the first failed safety gate; diagnose and report rather than retrying blindly. The verified full-site archive remains the recovery point if the remote shell itself is forcibly killed before a trap can run.
 
 - [ ] **Step 5: Independently verify and preserve evidence**
 
