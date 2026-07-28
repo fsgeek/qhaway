@@ -30,7 +30,7 @@ def test_recall_tool_returns_the_projection(tmp_path):
 
     mcp = server.build_server(str(tmp_path))
     result = asyncio.run(mcp.call_tool("recall", {}))
-    text = result[0][0].text
+    text = result.content[0].text
 
     assert "reachable-memory" in text
     assert "proves the tool path is wired" in text

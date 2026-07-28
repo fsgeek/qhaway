@@ -32,6 +32,6 @@ def test_mcp_serverinfo_reports_qhaway_version():
     from qhaway import server
 
     mcp = server.build_server(".")
-    opts = mcp._mcp_server.create_initialization_options()
+    opts = mcp._lowlevel_server.create_initialization_options()
     assert opts.server_version == qhaway.__version__
     assert opts.server_version != "1.28.0"  # the SDK version it used to misreport

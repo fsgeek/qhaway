@@ -49,7 +49,8 @@ def _claim_fm(name: str, collection: str, value: int) -> str:
 
 def _deployed_recall(memory_dir: Path, **args) -> str:
     mcp = server.build_server(str(memory_dir))
-    return asyncio.run(mcp._tool_manager.call_tool("recall", args))
+    result = asyncio.run(mcp.call_tool("recall", args))
+    return result.content[0].text
 
 
 def test_deployed_recall_regrounds_claim_against_live_store(tmp_path, monkeypatch):
