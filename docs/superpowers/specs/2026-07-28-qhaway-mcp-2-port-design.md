@@ -71,20 +71,39 @@ direction of less private access.
   `result.content[0].text` and returns that. The helper's signature and every
   caller stay unchanged.
 
-One new test is added, because a coverage gap makes the port unverifiable
-otherwise. `test_serve_regrounds_claim.py` skips unless
-`~/.yanantin/config/db.ini` exists, and CI's own comment records that these
-live-store tests "skip cleanly." It is the only test that invokes a tool through
-`build_server`, so in CI and on any box without a yanantin config, **nothing
-exercises the tool-invocation path at all**. Porting the `call_tool` seam under
-that condition would produce a green suite that proves nothing about the seam
-being ported.
+One new test is added, because the existing coverage of the tool-invocation path
+cannot fail.
 
-`tests/test_serve_recall_tool.py` closes the gap: build a server over a temporary
-memory directory, invoke `recall` through the public `call_tool`, and assert the
-projection text comes back. It needs no ArangoDB — `reground.default_provider()`
+An earlier draft of this section claimed that nothing exercises the path in CI.
+That was wrong, and the correction is left in place rather than edited away.
+`test_serve_regrounds_claim.py` holds two tests. The first skips without
+`~/.yanantin/config/db.ini`. The second,
+`test_deployed_recall_claimless_memory_has_no_regrounded_section`, never touches
+the live store and **does** run — so `_deployed_recall`, and through it the tool
+interface, executes on every CI run.
+
+The real problem is what that test asserts:
+
+```python
+assert "## Re-grounded claims" not in out
+```
+
+A negative assertion over a value that could be empty. Had the port broken the
+result unwrapping so `_deployed_recall` returned `""`, this assertion would still
+hold and the suite would still be green. The path is *executed*; it is not
+*checked*. That is a guard-shaped test rather than a guard, and it goes green on
+precisely the failure this port can introduce.
+
+`tests/test_serve_recall_tool.py` closes the gap with a positive assertion: build
+a server over a temporary memory directory, invoke `recall` through the public
+`call_tool`, and assert the projected text of a known memory comes back. An empty
+or malformed result fails it. It needs no ArangoDB — `reground.default_provider()`
 returns `None` on a base install and recall stays byte-identical — so it runs
 everywhere, including CI.
+
+The existing negative assertion is left as it is. It tests something real (a
+claimless memory grows no re-grounding section) and is not the right place to
+also check that recall returns anything at all.
 
 It is written and passing against mcp 1.x *before* the port, so it functions as a
 regression guard across the migration rather than as a post-hoc justification.
