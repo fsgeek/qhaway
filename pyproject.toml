@@ -14,7 +14,7 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "mcp[cli]>=1.28.0",
+    "mcp[cli]>=2,<3",
     "pyyaml",
 ]
 
