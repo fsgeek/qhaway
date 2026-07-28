@@ -121,22 +121,21 @@ def initialize_server(memory_dir: str) -> None:
 
 
 def build_server(memory_dir: str):
-    """Construct the configured FastMCP server (tools bound, version surfaced)
+    """Construct the configured MCPServer (tools bound, version surfaced)
     WITHOUT running the blocking loop — the testable seam for the handshake.
 
-    FastMCP's constructor exposes no version pass-through, so set it on the
-    wrapped low-level server; this is the field a client reads as
-    serverInfo.version (otherwise the SDK's own version is misreported).
+    `version` is what a client reads as serverInfo.version; passing it here keeps
+    the SDK's own version from being misreported.
     """
     from qhaway import __version__, reground as reground_mod
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server import MCPServer
 
-    mcp = FastMCP(
+    mcp = MCPServer(
         "qhaway",
         instructions=f"qhaway memory server v{__version__}. Call recall() first; "
         "your context is stale and recall() is the latest word.",
+        version=__version__,
     )
-    mcp._mcp_server.version = __version__
 
     # Discover the re-ground provider once, at serve time. None on a base install
     # (no [reground] extra) or a storeless box → recall stays byte-identical. With

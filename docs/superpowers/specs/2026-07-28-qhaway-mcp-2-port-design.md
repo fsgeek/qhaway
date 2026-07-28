@@ -248,7 +248,12 @@ bound through. It does not change what they do.
    → verify: `test_serve_recall_tool.py` passes **without skipping** on a box
    with no `~/.yanantin/config/db.ini`. `pytest -q -rs` must not list it among
    the skips.
-4. `grep -rn "fastmcp\|_mcp_server" src/ tests/` returns nothing.
+4. No reference to the removed API survives.
+   → verify: `grep -rn "fastmcp\|FastMCP" src/ tests/` and
+   `grep -rn "\._mcp_server" src/ tests/` both return nothing. The attribute
+   pattern must be anchored on the leading dot: bare `_mcp_server` also matches
+   `setup.py:43`'s unrelated `_mcp_server()` config builder and two test names,
+   so the loose form fails on a correct port.
 5. The README describes the shipped package.
    → verify: its status line reads `0.4.0`, and its `remember` signature lists
    `supersedes` — matching `server.py:154`.

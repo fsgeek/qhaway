@@ -231,8 +231,16 @@ Expected: all pass. `test_serve_recall_tool.py` passes and is **not** in the ski
 
 - [ ] **Step 8: Confirm no 1.x API references survive**
 
-Run: `grep -rn "fastmcp\|_mcp_server" src/ tests/`
-Expected: no output. A hit in a comment or docstring counts as a failure — the words describe an API that no longer exists.
+Run both:
+
+```bash
+grep -rn "fastmcp\|FastMCP" src/ tests/
+grep -rn "\._mcp_server" src/ tests/
+```
+
+Expected: no output from either. A hit in a comment or docstring counts as a failure — the words describe an API that no longer exists.
+
+Anchor the attribute pattern on its leading dot. A bare `_mcp_server` search also matches `src/qhaway/setup.py:43`'s unrelated `_mcp_server()` config builder and the test names `test_install_registers_mcp_server` and `test_mcp_serverinfo_reports_qhaway_version`, so the loose pattern reports a failure on a correctly ported tree.
 
 - [ ] **Step 9: Commit**
 
