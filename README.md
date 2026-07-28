@@ -125,8 +125,10 @@ Two verbs are exposed to the model:
 
 - `recall(type?, role?, status?)` — pure read; returns the budgeted projection
   (omit args for the working set).
-- `remember(type, title, body, description?, links?)` — writes a topic file then
-  reconciles. Files stay truth; the DB is a derived, rebuildable view.
+- `remember(type, title, body, description?, links?, supersedes?)` — writes a
+  topic file then reconciles. Pass `supersedes` naming the memory this one
+  retires, and recall demotes the loser. Files stay truth; the DB is a derived,
+  rebuildable view.
 
 You don't run the server yourself — `init` wires it. Under the hood the MCP
 server derives its memory directory from `CLAUDE_PROJECT_DIR` and provisions it
@@ -176,7 +178,7 @@ feeling the same sprawl, it spreads. Propagation is the measurement.
 
 ## Status
 
-Early (`v0.2.1`). The design is specified in
+Early (`v0.4.0`). The design is specified in
 [`docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md`](docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md).
 
 ## Contributing
