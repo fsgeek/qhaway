@@ -167,6 +167,34 @@ def test_unit_parse_fallback_and_tolerance(temp_memory_dir):
     assert result["status"] == "live"
 
 
+def test_unit_parse_date_hint_dashed_kebab_stem(temp_memory_dir):
+    """
+    Unit Test: a dashed date inside a kebab-case stem must populate date_hint,
+    normalized to the same compact form the underscore path emits. The real
+    corpora name files like 'draft-complete-2026-08-04-...' — a convention
+    DATE_RE never matched, leaving recency ordering silently inert (found
+    2026-08-09 when a stale record outranked its completion by alphabet).
+    """
+    check_modules_loaded()
+
+    filepath = create_topic_file(
+        temp_memory_dir,
+        "draft-complete-2026-08-04-all-thirteen-sections.md",
+        "---\ntype: project\nname: Draft complete\n---\nBody.\n",
+    )
+    result = parse.parse_memory_file(str(filepath))
+    assert result["date_hint"] == "20260804"
+
+    # The underscore-compact form keeps precedence when both appear.
+    filepath = create_topic_file(
+        temp_memory_dir,
+        "log_20260101_reviewed-2026-08-04.md",
+        "---\ntype: project\nname: Log\n---\nBody.\n",
+    )
+    result = parse.parse_memory_file(str(filepath))
+    assert result["date_hint"] == "20260101"
+
+
 def test_unit_model_build_index(temp_memory_dir):
     """
     Unit Test: Verifies qhaway.model.build_index (or the initial schema setup)
