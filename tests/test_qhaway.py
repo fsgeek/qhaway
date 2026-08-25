@@ -1726,3 +1726,46 @@ def test_unit_rebuild_only_on_true_drift(temp_memory_dir):
     conn.close()
 
 
+
+
+def test_unit_slugify_caps_long_titles_keeping_them_distinct_and_writable(temp_memory_dir):
+    """A title longer than the filesystem's name limit must still produce a
+    writable, distinct, human-readable filename. Regression: a ~384-char
+    title raised ENAMETOOLONG from remember() (2026-08-25). The slug is
+    capped on a word boundary with a hash of the full title appended, so two
+    long titles sharing a prefix never collide."""
+    from qhaway import reconcile, server
+
+    base = ("D8 attribution C0b measured allocator is the whole loss at B3 r1 r3 "
+            "with envelope width zero and the request identity coordinate carrying "
+            "all of it while device queue order and remainder stay perfectly redundant ")
+    t1 = base + "alpha variant one"
+    t2 = base + "beta variant two"
+    s1, s2 = reconcile.slugify(t1), reconcile.slugify(t2)
+    assert len(s1.encode("utf-8")) <= 200          # room for a numeric suffix under 255
+    assert s1 != s2                                  # shared 200+ char prefix, still distinct
+    assert s1.startswith("d8-attribution-c0b-measured")
+    assert "--" not in s1 and not s1.endswith("-")
+    # both actually write, and the long body that first triggered the report
+    fn = server.remember("project", t1, "x" * 4000, memory_dir=str(temp_memory_dir))
+    assert (temp_memory_dir / fn).is_file()
+    server.remember("project", t2, "y", memory_dir=str(temp_memory_dir))
+
+
+def test_unit_slugify_short_titles_unchanged(temp_memory_dir):
+    """The cap must not touch ordinary titles — no hash suffix, byte-identical
+    to the pre-cap behavior."""
+    from qhaway import reconcile
+    assert reconcile.slugify("Review feedback") == "review-feedback"
+    assert reconcile.slugify("Tony's three-verb model of safety") == "tonys-three-verb-model-of-safety"
+
+
+def test_unit_slugify_cap_preserves_a_trailing_date_stem(temp_memory_dir):
+    """_date_hint reads the date off the stem; the cap must not sever a
+    trailing YYYY-MM-DD when it truncates."""
+    from qhaway import parse, reconcile
+    long_dated = ("A very long orientation note about the instrument status and the "
+                  "authority order and the frozen commitments and the open threads " * 3) + "2026-08-25"
+    s = reconcile.slugify(long_dated)
+    assert s.endswith("2026-08-25")
+    assert parse._date_hint(s, {}) == "20260825"   # dashed dates normalize to joined form
