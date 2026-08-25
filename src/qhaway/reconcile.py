@@ -61,19 +61,37 @@ def strip_signature(text: str) -> str:
 # memories — and silently drops links that normalize identically).
 _SLUG_STRIP = re.compile(r"[^\w-]+", re.UNICODE)
 _SLUG_COLLAPSE = re.compile(r"-{2,}")
+# Cap the slug so the filename stays well under the common 255-byte NAME_MAX,
+# leaving room for a "-N" collision suffix and the ".md" extension. Titles this
+# long are descriptions, not names; the cap keeps the leading words readable and
+# appends a hash of the full title so two long titles never collide.
+_SLUG_MAX = 180
+_TRAILING_DATE = re.compile(r"-(\d{4}-\d{2}-\d{2})$")
 
 
 def slugify(title: str) -> str:
     lowered = title.strip().lower().replace(" ", "-")
     cleaned = _SLUG_STRIP.sub("", lowered).replace("_", "-")
     cleaned = _SLUG_COLLAPSE.sub("-", cleaned).strip("-")
-    if cleaned:
+    if not cleaned:
+        # Nothing survived (whitespace/punctuation-only). Fall back to a stable
+        # hash of the original so distinct titles stay distinct, never the shared
+        # constant "memory".
+        digest = hashlib.sha256(title.encode("utf-8")).hexdigest()[:8]
+        return f"memory-{digest}"
+    if len(cleaned.encode("utf-8")) <= _SLUG_MAX:
         return cleaned
-    # Nothing survived (whitespace/punctuation-only). Fall back to a stable
-    # hash of the original so distinct titles stay distinct, never the shared
-    # constant "memory".
+    # Too long for the filesystem. Preserve a trailing ISO date (the parse layer
+    # reads date_hint off the stem), append a hash of the FULL title so distinct
+    # long titles stay distinct, and truncate the head on a word boundary to fit.
     digest = hashlib.sha256(title.encode("utf-8")).hexdigest()[:8]
-    return f"memory-{digest}"
+    date_match = _TRAILING_DATE.search(cleaned)
+    tail = f"-{date_match.group(1)}" if date_match else ""
+    head = cleaned[: date_match.start()] if date_match else cleaned
+    budget = _SLUG_MAX - len((digest + tail).encode("utf-8")) - 1  # 1 for the "-" before digest
+    truncated = head.encode("utf-8")[:budget].decode("utf-8", "ignore").rstrip("-")
+    truncated = truncated.rsplit("-", 1)[0] if "-" in truncated else truncated
+    return f"{truncated}-{digest}{tail}"
 
 
 def normalize_link(raw: str) -> str:
