@@ -118,10 +118,12 @@ def _session(which: str) -> int:
     return _exit(directory, project.DEFAULT_BUDGET)
 
 
-def _resolve_dir(ns, environ=None, home=None) -> str:
+def _resolve_dir(ns, environ=None, home=None, cwd=None) -> str:
     """Resolve the memory dir. Explicit --dir wins, then QHAWAY_MEMORY_DIR, then
     the slug dir derived from CLAUDE_PROJECT_DIR (so serve, session-start, and
-    session-end all land on the same per-project dir), then the cwd."""
+    session-end all land on the same per-project dir), then the slug dir derived
+    from the cwd — an interactive `qhaway index` run inside a project must reach
+    that project's store, never index the project's own markdown as memories."""
     environ = os.environ if environ is None else environ
     if ns.dir:
         return ns.dir
@@ -130,7 +132,8 @@ def _resolve_dir(ns, environ=None, home=None) -> str:
     derived = paths.derive_from_env(environ, home=home)
     if derived is not None:
         return str(derived)
-    return "."
+    cwd = os.getcwd() if cwd is None else cwd
+    return str(paths.memory_dir_for(cwd, home=home))
 
 
 def _serve(directory: str) -> int:
