@@ -28,6 +28,10 @@ def main(args: list[str] | None = None) -> int:
         p.add_argument("--dry-run", action="store_true")
         p.add_argument("--check", action="store_true")  # deprecated alias on index
         p.add_argument("--emit", action="store_true")
+        # serve only: keep MEMORY.md the always-current budgeted index (at
+        # --budget) instead of the redirect — for hookless hosts (Cowork/Desktop)
+        # that load MEMORY.md directly through a truncating reader.
+        p.add_argument("--inline-index", action="store_true")
     sub.add_parser("session-start")
     sub.add_parser("session-end")
     sub.add_parser("init", aliases=["install"])  # install/uninstall is the pair users reach for
@@ -44,7 +48,7 @@ def main(args: list[str] | None = None) -> int:
     directory = _resolve_dir(ns)
 
     if ns.command == "serve":
-        return _serve(directory)
+        return _serve(directory, ns.budget if ns.inline_index else None)
     if ns.command == "exit":
         return _exit(directory, ns.budget)
     if ns.command == "check" or (ns.command == "index" and ns.check):
@@ -136,7 +140,7 @@ def _resolve_dir(ns, environ=None, home=None, cwd=None) -> str:
     return str(paths.memory_dir_for(cwd, home=home))
 
 
-def _serve(directory: str) -> int:
+def _serve(directory: str, inline_budget: int | None = None) -> int:
     # A fresh project has no memory dir yet. serve must PROVISION it, not reject
     # it — otherwise CC sees the process exit and reports a failed MCP connection,
     # and the first remember() could never create the first memory. Create the
@@ -147,7 +151,7 @@ def _serve(directory: str) -> int:
     except OSError as exc:
         sys.stderr.write(f"cannot create memory directory {directory}: {exc}\n")
         return 1
-    server.run(directory)
+    server.run(directory, inline_budget=inline_budget)
     return 0
 
 
@@ -189,11 +193,31 @@ def _exit(directory: str, budget: int) -> int:
         return 1
 
     reconcile(directory)
+    write_index(directory, budget, style="exit")
+    return 0
+
+
+def write_index(directory: str, budget: int, style: str = "exit") -> None:
+    """Compose and write the budgeted, signed index into MEMORY.md. Styles:
+    "exit" — the session-end static index, no tool instructions since neither
+    hooks nor server are guaranteed once written; "live" — inline-index serve
+    mode for hookless hosts, where the server is by definition running, so the
+    footer points at recall()/remember() for the full store.
+
+    Callers reconcile first; this composes from the db as it stands.
+    """
+    memory_dir = Path(directory)
     conn = model.get_connection(directory)
     try:
         total = len(model.topic_files(memory_dir))
 
         def compose_footer(omitted: int) -> str:
+            if style == "live":
+                return (
+                    f"\n\n---\n_qhaway live index — {total} memories under {budget} "
+                    f"bytes; {omitted} set aside. Call recall() for the full "
+                    "working set; remember() writes._\n"
+                )
             return (
                 f"\n\n---\n_qhaway exit index — {total} memories under {budget} "
                 f"bytes; {omitted} set aside. Self-sufficient static index "
@@ -216,10 +240,11 @@ def _exit(directory: str, budget: int) -> int:
         footer = compose_footer(sum(result.overflow.omitted_counts.values()))
     finally:
         conn.close()
+    memory_file = memory_dir / MEMORY_NAME
+    reconcile_mod.snapshot_unowned(memory_file)
     reconcile_mod.write_readonly(
-        memory_dir / MEMORY_NAME, reconcile_mod.embed_signature(result.markdown + footer)
+        memory_file, reconcile_mod.embed_signature(result.markdown + footer)
     )
-    return 0
 
 
 def _check(directory: str, budget: int) -> int:

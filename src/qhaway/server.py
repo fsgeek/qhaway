@@ -32,7 +32,8 @@ def _emit(root: Path, event: dict) -> None:
         pass
 
 
-def remember(type, title, body, description=None, links=None, supersedes=None, memory_dir=".") -> str:
+def remember(type, title, body, description=None, links=None, supersedes=None, memory_dir=".",
+             inline_budget=None) -> str:
     if type not in VALID_TYPES:
         raise ValueError(f"invalid type {type!r}; must be one of {sorted(VALID_TYPES)}")
     root = Path(memory_dir)
@@ -42,7 +43,14 @@ def remember(type, title, body, description=None, links=None, supersedes=None, m
     text = reconcile.compose_topic_file(type, title, body, description, links, supersedes)
     stem = reconcile.slugify(title)
     filename = _exclusive_write(root, stem, text)
-    reconcile.reconcile(str(root))
+    if inline_budget is None:
+        reconcile.reconcile(str(root))
+    else:
+        # Inline-index mode (hookless host): MEMORY.md is the always-current
+        # budgeted index — never the redirect, which the host would load as the
+        # session's only memory.
+        reconcile.reconcile(str(root), heal=False)
+        cli.write_index(str(root), inline_budget, style="live")
     _emit(root, {"verb": "remember", "type": type, "title": title,
                  "body_chars": len(body), "filename": filename})
     return filename
@@ -115,12 +123,19 @@ def _render_regroundings(claims: list[dict], reground) -> str:
     return "\n".join(lines)
 
 
-def initialize_server(memory_dir: str) -> None:
-    """Run exactly one reconcile at startup, before accepting tool calls (C-3)."""
-    cli.reconcile(memory_dir)
+def initialize_server(memory_dir: str, inline_budget=None) -> None:
+    """Run exactly one reconcile at startup, before accepting tool calls (C-3).
+    With inline_budget set (hookless host), boot MEMORY.md straight to the
+    current budgeted index — no session hook will deliver a projection, so the
+    file itself must carry the memory."""
+    if inline_budget is None:
+        cli.reconcile(memory_dir)
+        return
+    reconcile.reconcile(memory_dir, heal=False)
+    cli.write_index(memory_dir, inline_budget, style="live")
 
 
-def build_server(memory_dir: str):
+def build_server(memory_dir: str, inline_budget=None):
     """Construct the configured MCPServer (tools bound, version surfaced)
     WITHOUT running the blocking loop — the testable seam for the handshake.
 
@@ -156,20 +171,21 @@ def build_server(memory_dir: str):
         one, pass `supersedes` (a slug, [[wikilink]], or list of them) naming the
         memory it retires — recall will then demote the loser. Returns the topic
         filename written."""
-        return _remember_impl(type, title, body, description, links, supersedes, memory_dir)
+        return _remember_impl(type, title, body, description, links, supersedes, memory_dir,
+                              inline_budget)
 
     return mcp
 
 
-def run(memory_dir: str) -> None:
+def run(memory_dir: str, inline_budget=None) -> None:
     """The blocking MCP event loop: expose remember/recall as live tools (stdio).
 
     Built per the handoff [[handoff-serve-is-the-last-stub]] — this is the last
     limb. The verbs already exist above; this binds them to the memory dir and
     runs the protocol loop a Claude Code session connects to.
     """
-    initialize_server(memory_dir)
-    build_server(memory_dir).run()
+    initialize_server(memory_dir, inline_budget)
+    build_server(memory_dir, inline_budget).run()
 
 
 # Module-level aliases so the tool wrappers above call the real verbs without

@@ -187,7 +187,11 @@ def write_readonly(path: Path, text: str) -> None:
         raise
 
 
-def reconcile(memory_dir: str) -> None:
+def reconcile(memory_dir: str, heal: bool = True) -> None:
+    """Sync the db to the topic files, then (by default) heal MEMORY.md to the
+    redirect stub. heal=False is for inline-index serve mode, where MEMORY.md is
+    the always-current budgeted index and must never transit through the
+    redirect — the caller writes the index instead."""
     root = Path(memory_dir)
     if not root.is_dir():
         raise FileNotFoundError(f"memory directory is not readable: {memory_dir}")
@@ -203,7 +207,8 @@ def reconcile(memory_dir: str) -> None:
     finally:
         conn.close()
 
-    _heal_redirect(root)
+    if heal:
+        _heal_redirect(root)
 
 
 def _reconcile_nodes(conn, root: Path) -> None:
@@ -229,26 +234,33 @@ def _heal_redirect(root: Path) -> None:
     desired_body = override.read_text(encoding="utf-8") if override.exists() else REDIRECT_TEMPLATE
     desired = embed_signature(desired_body)
 
-    if memory_file.exists():
-        current = memory_file.read_text(encoding="utf-8")
-        sig = read_signature(current)
-        if sig is None:
-            # (2) user original — snapshot FIRST, then replace. Use a distinguished,
-            # durable name: this is the PRE-INSTALL original, the restore source for
-            # an explicit uninstall. Captured once; if it already exists (a prior
-            # boot took it), this original is itself a later hand-authored file, so
-            # fall back to a timestamped backup rather than clobbering the first.
-            preinstall = _preinstall_path(memory_file)
-            memory_file.rename(preinstall if not preinstall.exists() else _backup_path(memory_file))
-        elif sig != _sha256(strip_signature(current)):
-            # (4) our file, hand-edited — preserve the edit, then regenerate
-            memory_file.rename(_backup_path(memory_file))
-        else:
-            # (3) ours, unchanged — fall through to idempotent rewrite, no backup
-            pass
-
+    snapshot_unowned(memory_file)
     write_readonly(memory_file, desired)
     _write_sidecar(sidecar_file, _sha256(strip_signature(desired)))
+
+
+def snapshot_unowned(memory_file: Path) -> None:
+    """Before any qhaway write over MEMORY.md, preserve content we do not own.
+    Shared by the redirect heal and the inline/exit index writers, so adopting a
+    host-native store can never clobber the human's original."""
+    if not memory_file.exists():
+        return
+    current = memory_file.read_text(encoding="utf-8")
+    sig = read_signature(current)
+    if sig is None:
+        # (2) user original — snapshot FIRST, then replace. Use a distinguished,
+        # durable name: this is the PRE-INSTALL original, the restore source for
+        # an explicit uninstall. Captured once; if it already exists (a prior
+        # boot took it), this original is itself a later hand-authored file, so
+        # fall back to a timestamped backup rather than clobbering the first.
+        preinstall = _preinstall_path(memory_file)
+        memory_file.rename(preinstall if not preinstall.exists() else _backup_path(memory_file))
+    elif sig != _sha256(strip_signature(current)):
+        # (4) our file, hand-edited — preserve the edit, then regenerate
+        memory_file.rename(_backup_path(memory_file))
+    else:
+        # (3) ours, unchanged — fall through to idempotent rewrite, no backup
+        pass
 
 
 def _sha256(text: str) -> str:
