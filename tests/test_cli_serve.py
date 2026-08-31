@@ -13,7 +13,7 @@ from qhaway import cli, server
 
 def test_serve_creates_missing_memory_dir_and_starts(tmp_path, monkeypatch):
     started = {}
-    monkeypatch.setattr(server, "run", lambda d: started.setdefault("dir", d))
+    monkeypatch.setattr(server, "run", lambda d, inline_budget=None: started.setdefault("dir", d))
     target = tmp_path / "projects" / "-fresh-proj" / "memory"
     assert not target.exists()
     rc = cli._serve(str(target))
@@ -24,7 +24,7 @@ def test_serve_creates_missing_memory_dir_and_starts(tmp_path, monkeypatch):
 
 def test_serve_still_works_when_dir_already_exists(tmp_path, monkeypatch):
     started = {}
-    monkeypatch.setattr(server, "run", lambda d: started.setdefault("dir", d))
+    monkeypatch.setattr(server, "run", lambda d, inline_budget=None: started.setdefault("dir", d))
     target = tmp_path / "memory"
     target.mkdir()
     rc = cli._serve(str(target))
