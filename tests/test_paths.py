@@ -31,7 +31,7 @@ def test_paths_from_env_derives_slug_dir():
     assert got == HOME / ".claude/projects/-home-tony-projects-qhaway/memory"
 
 
-def _resolve(argv, environ):
+def _resolve(argv, environ, cwd="/home/tony/projects/qhaway"):
     # Parse args the way main() does, then resolve, without running the command.
     import argparse
 
@@ -48,7 +48,7 @@ def _resolve(argv, environ):
         p.add_argument("--check", action="store_true")
         p.add_argument("--emit", action="store_true")
     parsed = parser.parse_args(argv)
-    return cli._resolve_dir(parsed, environ=environ, home=HOME)
+    return cli._resolve_dir(parsed, environ=environ, home=HOME, cwd=cwd)
 
 
 def test_serve_with_no_dir_resolves_to_slug_dir():
@@ -69,6 +69,15 @@ def test_explicit_dir_still_wins_over_derivation():
     env = {"CLAUDE_PROJECT_DIR": "/home/tony/projects/qhaway"}
     got = _resolve(["serve", "--dir", "/tmp/explicit"], env)
     assert got == "/tmp/explicit"
+
+
+def test_interactive_cwd_maps_through_slug_rule_not_used_as_store():
+    # No --dir, no QHAWAY_MEMORY_DIR, no CLAUDE_PROJECT_DIR: an interactive
+    # `qhaway index` run from a project dir must resolve that project's slug
+    # dir — never treat the project itself as the store, which silently
+    # indexes the repo's own markdown (CLAUDE.md, README.md) as memories.
+    got = _resolve(["index"], {}, cwd="/home/tony/projects/yupi")
+    assert got == str(HOME / ".claude/projects/-home-tony-projects-yupi/memory")
 
 
 def test_has_memory_false_when_absent(tmp_path):
