@@ -17,7 +17,12 @@ def _admin_db(db_name: str):
     if not ini.exists():
         pytest.skip("no ~/.yanantin/config/db.ini - live store unavailable")
 
-    from arango import ArangoClient
+    # Config alone does not make the store reachable: a default `uv sync` venv
+    # lacks the [reground] extra, and the test must skip, not error, there.
+    arango = pytest.importorskip(
+        "arango", reason="python-arango not installed - live store unavailable"
+    )
+    ArangoClient = arango.ArangoClient
 
     cfg = configparser.ConfigParser()
     cfg.read(ini)
