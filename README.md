@@ -145,7 +145,8 @@ writer updates it via atomic temp-file + replace.
 Claude Desktop's Cowork keeps a per-space memory store in the same shape — topic
 `.md` files plus a `MEMORY.md` index — but it runs **no session hooks**, and it
 loads `MEMORY.md` straight through a reader that truncates far earlier than
-Claude Code's (observed at roughly 3.5KB). The redirect design above assumes a
+Claude Code's (a Cowork session itself reported ~3.5KB when asked; not
+independently measured — treat `--budget` as something to verify on your host). The redirect design above assumes a
 hook will deliver the projection; on a host with no hooks, a session that never
 calls `recall()` would boot with a stub and nothing else.
 
