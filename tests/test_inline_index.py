@@ -121,3 +121,35 @@ def test_serve_cli_default_keeps_redirect_mode(monkeypatch, tmp_path):
     cli.main(["serve", "--dir", str(tmp_path)])
 
     assert started["budget"] is None
+
+
+def _fill(root: Path, count: int) -> None:
+    for i in range(count):
+        _write_memory(root, f"topic-{i:02d}", "project", "x" * 150, "body")
+
+
+def test_live_index_omission_hint_names_recall_not_the_cli(tmp_path):
+    # A hookless host has no shell into the store: the only way to see what
+    # was set aside is the running server's recall(), so the footer must say so.
+    _fill(tmp_path, 12)
+    reconcile_mod.reconcile(str(tmp_path))
+
+    cli.write_index(str(tmp_path), budget=800, style="live")
+
+    text = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
+    assert "memories not shown" in text
+    assert 'recall(type="project")' in text
+    assert "qhaway index" not in text
+
+
+def test_exit_index_omission_hint_keeps_the_cli(tmp_path):
+    # Exit index = qhaway disabled, no server: the shell command is the right hint.
+    _fill(tmp_path, 12)
+    reconcile_mod.reconcile(str(tmp_path))
+
+    cli.write_index(str(tmp_path), budget=800, style="exit")
+
+    text = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
+    assert "memories not shown" in text
+    assert "`qhaway index --type project`" in text
+    assert "recall(" not in text.split("---")[0]
