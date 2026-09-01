@@ -240,7 +240,7 @@ feeling the same sprawl, it spreads. Propagation is the measurement.
 
 ## Status
 
-Early (`v0.4.1`). The design is specified in
+Early (`v0.5.0`). The design is specified in
 [`docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md`](docs/superpowers/specs/2026-06-20-qhaway-mvp-design.md).
 
 ## Contributing
