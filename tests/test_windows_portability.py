@@ -42,3 +42,43 @@ def test_index_bytes_on_disk_are_the_bytes_budgeted(tmp_path):
     reconcile.write_readonly(target, text)
 
     assert target.read_bytes() == text.encode("utf-8")
+
+
+def test_write_readonly_survives_concurrent_writers_and_readers(tmp_path):
+    # Two remember() calls reconcile at once, and a host's truncating reader may
+    # hold MEMORY.md open at any moment. On Windows a rename over a file that is
+    # read-only, or open in another handle, fails — the writer must ride that
+    # out, not raise. (CI windows-latest failed test_cli_concurrent_remember on
+    # exactly this; a fast local box never hit the window.)
+    import threading
+
+    target = tmp_path / "MEMORY.md"
+    errors: list[BaseException] = []
+    stop = False
+
+    def writer(i: int) -> None:
+        for n in range(60):
+            try:
+                reconcile.write_readonly(target, f"writer {i} round {n}\n" * 40)
+            except BaseException as exc:  # noqa: BLE001 - collect, then assert
+                errors.append(exc)
+
+    def reader() -> None:
+        while not stop:
+            try:
+                target.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                pass  # between the very first temp+replace only
+
+    writers = [threading.Thread(target=writer, args=(i,)) for i in range(4)]
+    readers = [threading.Thread(target=reader) for _ in range(2)]
+    for t in writers + readers:
+        t.start()
+    for t in writers:
+        t.join()
+    stop = True
+    for t in readers:
+        t.join()
+
+    assert errors == []
+    assert target.read_text(encoding="utf-8").startswith("writer ")
