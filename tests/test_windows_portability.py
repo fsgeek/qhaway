@@ -67,8 +67,10 @@ def test_write_readonly_survives_concurrent_writers_and_readers(tmp_path):
         while not stop:
             try:
                 target.read_text(encoding="utf-8")
-            except FileNotFoundError:
-                pass  # between the very first temp+replace only
+            except OSError:
+                # A reader's open() can lose the race with the rename itself on
+                # Windows; that is the reader's transient, not the writer's.
+                pass
 
     writers = [threading.Thread(target=writer, args=(i,)) for i in range(4)]
     readers = [threading.Thread(target=reader) for _ in range(2)]
