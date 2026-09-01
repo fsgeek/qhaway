@@ -86,7 +86,8 @@ def recall(type=None, role=None, status="live", memory_dir=".", reground=None) -
     conn = model.get_connection(str(root))
     try:
         result = project.project_slice_with_overflow(
-            conn, budget=project.DEFAULT_BUDGET, content_type=type, role=role, status=status
+            conn, budget=project.DEFAULT_BUDGET, content_type=type, role=role, status=status,
+            hint="tool",
         )
         claims = _claim_nodes(conn, type, role, status) if reground is not None else []
     finally:
