@@ -183,7 +183,9 @@ Claude app-data directory (on Windows,
 searching that tree for `MEMORY.md` is the quickest way to find it. Set
 `--budget` to your host's observed limit with a little headroom.
 
-Running Claude Desktop on Windows with qhaway installed inside WSL works too —
+qhaway runs natively on Windows (the test suite runs there in CI), so the
+entry above works as-is with `uv` installed on Windows. Running Claude Desktop
+on Windows with qhaway installed inside WSL works too —
 `uv tool install qhaway` in WSL, then use `"command": "wsl"` with
 `"args": ["-e", "/home/<you>/.local/bin/qhaway", "serve", "--dir", "/mnt/c/Users/<you>/AppData/Roaming/Claude/.../memory", "--inline-index", "--budget", "3400"]`.
 
