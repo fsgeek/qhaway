@@ -51,6 +51,7 @@ def test_write_readonly_survives_concurrent_writers_and_readers(tmp_path):
     # out, not raise. (CI windows-latest failed test_cli_concurrent_remember on
     # exactly this; a fast local box never hit the window.)
     import threading
+    import time
 
     target = tmp_path / "MEMORY.md"
     errors: list[BaseException] = []
@@ -67,6 +68,9 @@ def test_write_readonly_survives_concurrent_writers_and_readers(tmp_path):
         while not stop:
             try:
                 target.read_text(encoding="utf-8")
+                time.sleep(0.0005)  # a host reads; it does not spin. On a 2-core CI
+                # runner two zero-pause readers keep the file open continuously
+                # and Windows never admits the rename — writers starve.
             except OSError:
                 # A reader's open() can lose the race with the rename itself on
                 # Windows; that is the reader's transient, not the writer's.
