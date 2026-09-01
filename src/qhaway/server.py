@@ -64,7 +64,7 @@ def _exclusive_write(root: Path, stem: str, text: str) -> str:
             fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
             continue
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
         return name
     raise RuntimeError(

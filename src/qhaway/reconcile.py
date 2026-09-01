@@ -173,13 +173,22 @@ def write_readonly(path: Path, text: str) -> None:
     0444 temp over an existing 0444 file succeeds via directory write; direct
     open('w') on the 0444 target raises PermissionError. No chmod-before-replace
     fallback needed on POSIX filesystems.
+
+    NTFS (Windows Python 3.14, 2026-09-01): the same replace raises
+    PermissionError — Windows refuses to replace or delete a read-only file. So
+    on Windows the existing target's read-only bit is cleared first. The
+    friction signal is unchanged: direct open('w') still fails there too.
     """
     directory = path.parent
     fd, tmp_name = tempfile.mkstemp(dir=str(directory), prefix=".qhaway-tmp-")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        # newline="\n": the budget was computed on LF bytes; text-mode CRLF on
+        # Windows would ship a file larger than the budget it declares.
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
         os.chmod(tmp_name, 0o444)
+        if os.name == "nt" and path.exists():
+            os.chmod(path, 0o644)
         os.replace(tmp_name, path)
     except BaseException:
         if os.path.exists(tmp_name):
@@ -284,6 +293,7 @@ def _write_sidecar(sidecar_file: Path, output_hash: str) -> None:
     sidecar_file.write_text(
         json.dumps({"version": 1, "last_output_hash": output_hash}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
