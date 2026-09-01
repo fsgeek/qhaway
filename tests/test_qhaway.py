@@ -1700,7 +1700,7 @@ def test_cli_destructive_rebuild_serialized(temp_memory_dir):
             model.rebuild_database(str(temp_memory_dir))
         assert "lock" in str(excinfo.value).lower()
     finally:
-        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        model._unlock(lock_fd)
         lock_fd.close()
 
 
