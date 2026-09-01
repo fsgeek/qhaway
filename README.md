@@ -140,6 +140,68 @@ exist for debugging; a normal install never invokes them by hand.)
 barrier — so the reflexive hand-edit is deflected toward the tools. qhaway's own
 writer updates it via atomic temp-file + replace.
 
+## Hookless hosts (Claude Desktop / Cowork)
+
+Claude Desktop's Cowork keeps a per-space memory store in the same shape — topic
+`.md` files plus a `MEMORY.md` index — but it runs **no session hooks**, and it
+loads `MEMORY.md` straight through a reader that truncates far earlier than
+Claude Code's (observed at roughly 3.5KB). The redirect design above assumes a
+hook will deliver the projection; on a host with no hooks, a session that never
+calls `recall()` would boot with a stub and nothing else.
+
+For those hosts, run the server in **inline-index mode**:
+
+```sh
+qhaway serve --dir <space memory dir> --inline-index --budget 3400
+```
+
+`MEMORY.md` then *is* the budgeted index — rewritten when the server starts and
+again after every `remember()`, signed, and with a footer that points at
+`recall()` for everything it had to set aside. The host keeps loading the file
+exactly as before; it just never loads a truncated one.
+
+Wire it in `claude_desktop_config.json` (macOS: `~/Library/Application
+Support/Claude/`; Windows: `%APPDATA%\Claude\`):
+
+```json
+{
+  "mcpServers": {
+    "qhaway": {
+      "command": "uvx",
+      "args": ["--python", "3.14", "qhaway", "serve",
+               "--dir", "/path/to/the/space/memory",
+               "--inline-index", "--budget", "3400"]
+    }
+  }
+}
+```
+
+The space's memory directory is the folder holding its `MEMORY.md`, under the
+Claude app-data directory (on Windows,
+`%APPDATA%\Claude\local-agent-mode-sessions\<session>\<agent>\spaces\<space>\memory`);
+searching that tree for `MEMORY.md` is the quickest way to find it. Set
+`--budget` to your host's observed limit with a little headroom.
+
+Running Claude Desktop on Windows with qhaway installed inside WSL works too —
+`uv tool install qhaway` in WSL, then use `"command": "wsl"` with
+`"args": ["-e", "/home/<you>/.local/bin/qhaway", "serve", "--dir", "/mnt/c/Users/<you>/AppData/Roaming/Claude/.../memory", "--inline-index", "--budget", "3400"]`.
+
+What to expect:
+
+- On first start, the host's own index is preserved as `MEMORY.preinstall.md`
+  before qhaway's takes its place; nothing is deleted.
+- If the host rewrites `MEMORY.md` itself, qhaway treats that like any hand
+  edit (see "What's preserved" below): the host's version is kept under a
+  timestamped name and the index is rebuilt on the next start.
+- Topic files the host writes during a session enter the index at the next
+  server start or the next `remember()`; `recall()` always reads the current
+  files.
+
+This mode has been verified against a copy of a live Cowork space store (46
+memories: a 12KB native index became a 3,150-byte index declaring 33 set
+aside). It has not yet been run against a live space — if you try it, the
+outcome is worth an issue either way.
+
 ## How it works
 
 ```

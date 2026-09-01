@@ -20,10 +20,10 @@ qhaway is [`uv`](https://docs.astral.sh/uv/)-managed and targets Python 3.14.
 git clone https://github.com/fsgeek/qhaway
 cd qhaway
 uv sync --group dev      # installs the package + test tooling
-uv run pytest -q         # 133 passed, 2 skipped is a clean run
+uv run pytest -q         # 152 passed, 3 skipped is a clean run
 ```
 
-The 2 skips are the live-store (`reground`) tests — they need an ArangoDB and a
+The 3 skips are the live-store (`reground`) tests — they need an ArangoDB and a
 `~/.yanantin/config/db.ini`, and skip cleanly without them. You do not need
 Arango to contribute to core qhaway.
 
