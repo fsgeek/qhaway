@@ -32,3 +32,13 @@ def test_rebuild_database_takes_its_lock_on_every_platform(tmp_path):
         assert [n["file"] for n in model.fetch_nodes(conn)] == ["one.md"]
     finally:
         conn.close()
+
+
+def test_index_bytes_on_disk_are_the_bytes_budgeted(tmp_path):
+    # Text-mode writes turn "\n" into "\r\n" on Windows, so a file budgeted at N
+    # bytes ships larger than N — and the host's truncating reader counts bytes.
+    target = tmp_path / "MEMORY.md"
+    text = "line one\nline two\n"
+    reconcile.write_readonly(target, text)
+
+    assert target.read_bytes() == text.encode("utf-8")

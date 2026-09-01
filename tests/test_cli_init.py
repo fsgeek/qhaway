@@ -5,7 +5,10 @@ from qhaway import cli
 
 def _run(args, home):
     old = dict(os.environ)
+    # Windows Path.home() reads USERPROFILE, not HOME: set both, or `init`
+    # lands in the developer's REAL Claude config (it did, 2026-09-01).
     os.environ["HOME"] = str(home)
+    os.environ["USERPROFILE"] = str(home)
     try:
         return cli.main(args)
     finally:

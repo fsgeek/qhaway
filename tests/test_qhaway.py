@@ -1644,8 +1644,10 @@ def test_cli_server_stderr_safety(temp_memory_dir):
     """
     check_modules_loaded()
 
-    # /proc is real but cannot host a new subdir → mkdir fails → clean startup error.
-    res = run_qhaway_cli(["serve", "--dir", "/proc/qhaway-cannot-create/memory"])
+    # A regular file as the parent: mkdir under it fails on every OS → clean startup error.
+    blocker = temp_memory_dir / "not-a-dir"
+    blocker.write_text("")
+    res = run_qhaway_cli(["serve", "--dir", str(blocker / "memory")])
     assert res.returncode != 0
     assert len(res.stdout.strip()) == 0  # stdout clean — no protocol garbage
     assert "cannot create memory directory" in res.stderr
@@ -1688,9 +1690,8 @@ def test_cli_destructive_rebuild_serialized(temp_memory_dir):
     # We acquire the lock manually to simulate another process rebuilding
     lock_file = temp_memory_dir / ".qhaway.db.reset.lock"
     
-    import fcntl
     lock_fd = open(lock_file, "a+", encoding="utf-8")
-    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    model._try_lock(lock_fd)  # the same platform lock the product takes
     
     try:
         # A concurrent destructive rebuild (e.g. from version mismatch or explicit command)

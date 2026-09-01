@@ -15,7 +15,7 @@ def _run(args, env):
 def test_dormant_then_active_via_topic_file(tmp_path, capsys):
     proj = tmp_path / "proj"; proj.mkdir()
     derived = tmp_path / ".claude/projects" / str(proj).replace("/", "-") / "memory"
-    env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path)}
+    env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
     # 1) dormant: no memory dir at all -> no-op, nothing written
     assert _run(["session-start"], env) == 0
     assert not (derived / "MEMORY.md").exists()
@@ -34,7 +34,7 @@ def test_lone_handwritten_memory_md_stays_dormant(tmp_path):
     derived = tmp_path / ".claude/projects" / str(proj).replace("/", "-") / "memory"
     derived.mkdir(parents=True)
     (derived / "MEMORY.md").write_text("# hand written, no topics\n")
-    env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path)}
+    env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
     before = (derived / "MEMORY.md").read_text()
     # a lone MEMORY.md is NOT "has memory" -> dormant, file untouched
     assert _run(["session-start"], env) == 0
