@@ -191,6 +191,8 @@ def write_readonly(path: Path, text: str) -> None:
         _replace(tmp_name, str(path))
     except BaseException:
         if os.path.exists(tmp_name):
+            if os.name == "nt":
+                os.chmod(tmp_name, 0o644)  # Windows refuses to unlink a read-only file
             os.unlink(tmp_name)
         raise
 
