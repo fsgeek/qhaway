@@ -1,0 +1,50 @@
+name: Release
+
+# Tag push (vX.Y.Z): build, smoke, publish to TESTPYPI, attach artifacts to the
+# GitHub release. Publishing to real PyPI is DELIBERATELY not automated — the
+# release flow keeps a human-visible judgment point between "the wheel installs
+# and works from TestPyPI" and "strangers get it": verify, then run
+#   uv publish --token "$PYPI_DEPLOY_KEY_REAL" dist/qhaway-X.Y.Z*
+# (Decision 2026-09-03; revisit when the project has more release history.)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build-and-testpypi:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # upload artifacts to the GitHub release
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Build
+        run: uv build
+
+      - name: Smoke-test the wheel
+        run: |
+          uv venv smoke-venv --python 3.14
+          uv pip install --python smoke-venv dist/*.whl
+          smoke-venv/bin/python -c "import qhaway; print(qhaway.__version__)"
+          mkdir smoke-store
+          printf -- '---\nname: smoke\ntype: project\ndescription: wheel smoke\n---\nbody\n' > smoke-store/smoke.md
+          smoke-venv/bin/qhaway index --dir smoke-store
+          grep -q smoke smoke-store/MEMORY.md
+
+      - name: Publish to TestPyPI
+        # --check-url makes re-runs idempotent: files already on TestPyPI are
+        # skipped instead of failing the workflow.
+        run: uv publish --publish-url https://test.pypi.org/legacy/ --check-url https://test.pypi.org/simple/ --token "$PYPI_TEST_TOKEN" dist/*
+        env:
+          PYPI_TEST_TOKEN: ${{ secrets.PYPI_DEPLOY_KEY_TEST }}
+
+      - name: Attach artifacts to the GitHub release (if one exists for this tag)
+        if: github.ref_type == 'tag'
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber || echo "no release for $GITHUB_REF_NAME yet; artifacts stay in the workflow run"
+        env:
+          GH_TOKEN: ${{ github.token }}
