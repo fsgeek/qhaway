@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -244,7 +245,7 @@ def rebuild_database(memory_dir: str) -> None:
         for suffix in _DB_SUFFIXES:
             target = root / f"{DB_NAME}{suffix}"
             if target.exists():
-                target.unlink()
+                _unlink_wait(target)
         conn = _open_wal(db_path(root))
         try:
             _full_load(conn, root)
@@ -257,6 +258,26 @@ def rebuild_database(memory_dir: str) -> None:
             _unlock(lock_fd)
         lock_fd.close()
         # Do not delete the lock file (avoids deletion races, U2-2).
+
+
+def _unlink_wait(target: Path) -> None:
+    """Delete, riding out another thread's short-lived connection on Windows.
+
+    A concurrent first-touch can diagnose a half-created schema as drift and
+    rebuild while the creator's connection still holds the file; Windows refuses
+    to delete an open file (WinError 32 — POSIX permits it, so only Windows ever
+    sees this). The holder is a reconcile/projection connection that closes in
+    milliseconds, and the files are truth: waiting briefly and rebuilding from
+    them loses nothing. Reproduced 2/200 at 2 cores; deadline matches the lock's."""
+    deadline = time.monotonic() + 5.0
+    while True:
+        try:
+            target.unlink()
+            return
+        except PermissionError:
+            if os.name != "nt" or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 def execute_query_with_retry(conn, query, memory_dir, params=None, _already_rebuilt=False):

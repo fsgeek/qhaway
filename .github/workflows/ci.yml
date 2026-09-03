@@ -38,3 +38,37 @@ jobs:
         # The live-store (reground) tests skip cleanly without an ArangoDB or a
         # ~/.yanantin config, so the base suite is fully green in CI.
         run: uv run --no-sync pytest -q
+
+  wheel:
+    # The artifact a stranger installs, not the editable checkout: build the
+    # wheel, install it into a clean venv, run the main command. The editable
+    # suite was green for five releases while bare `qhaway index` wrote nothing
+    # (fixed in 0.5.1) — only installing the artifact can see that class.
+    name: wheel (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Install the wheel into a clean venv and smoke-test it
+        shell: bash
+        run: |
+          uv venv smoke-venv --python 3.14
+          uv pip install --python smoke-venv dist/*.whl
+          if [ "$RUNNER_OS" = "Windows" ]; then BIN=smoke-venv/Scripts; else BIN=smoke-venv/bin; fi
+          "$BIN/python" -c "import qhaway; assert qhaway.__version__ != '0.0.0+unknown', 'wheel metadata missing'; print(qhaway.__version__)"
+          mkdir smoke-store
+          printf -- '---\nname: smoke\ntype: project\ndescription: wheel smoke\n---\nbody\n' > smoke-store/smoke.md
+          "$BIN/qhaway" index --dir smoke-store
+          grep -q "smoke" smoke-store/MEMORY.md  # the main command wrote the index
