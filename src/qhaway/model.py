@@ -215,7 +215,8 @@ def delete_node(conn: sqlite3.Connection, file_name: str) -> None:
 
 
 def fetch_nodes(conn: sqlite3.Connection) -> list[dict]:
-    cursor = conn.execute(f"SELECT {', '.join(_NODE_COLUMNS)} FROM nodes")
+    # B608: the interpolation is the module-constant column tuple, never input.
+    cursor = conn.execute(f"SELECT {', '.join(_NODE_COLUMNS)} FROM nodes")  # nosec B608
     columns = [col[0] for col in cursor.description]
     nodes = [dict(zip(columns, row)) for row in cursor.fetchall()]
     for node in nodes:
