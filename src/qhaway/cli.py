@@ -24,7 +24,10 @@ def main(args: list[str] | None = None) -> int:
         p.add_argument("--budget", type=int, default=project.DEFAULT_BUDGET)
         p.add_argument("--type", dest="content_type")
         p.add_argument("--role")
-        p.add_argument("--status", default="live")
+        # default None, NOT "live": the index dispatch must see whether the user
+        # actually passed a filter — a truthy default routed EVERY bare `index`
+        # to the print-only path (the e2f297e regression). Consumers normalize.
+        p.add_argument("--status", default=None)
         p.add_argument("--dry-run", action="store_true")
         p.add_argument("--check", action="store_true")  # deprecated alias on index
         p.add_argument("--emit", action="store_true")
@@ -58,11 +61,24 @@ def main(args: list[str] | None = None) -> int:
     # It prints the slice and must not overwrite the balanced MEMORY.md. --dry-run
     # is the explicit form of the same print-only path.
     if ns.command == "index" and (
-        ns.dry_run or ns.content_type or ns.role or ns.status
+        ns.dry_run or ns.content_type or ns.role or ns.status is not None
     ):
         return _dry_run(directory, ns)
 
-    # reconcile, and index-as-reconcile-alias
+    # Bare `index` — the README's main command: regenerate MEMORY.md as the
+    # budgeted, self-sufficient index (omissions declared), for the standalone
+    # user whose loader reads the file directly. Not the redirect stub: that is
+    # serve/session territory, where a hook or the server delivers the memory.
+    if ns.command == "index":
+        try:
+            reconcile_mod.reconcile(directory, heal=False)
+            write_index(directory, ns.budget, style="exit")
+        except FileNotFoundError as exc:
+            sys.stderr.write(f"{exc}\n")
+            return 1
+        return 0
+
+    # reconcile (and its --emit debugging form)
     try:
         reconcile(directory)
     except FileNotFoundError as exc:
@@ -166,7 +182,7 @@ def _dry_run(directory: str, ns) -> int:
             budget=ns.budget,
             content_type=ns.content_type,
             role=ns.role,
-            status=ns.status,
+            status=ns.status or "live",
         )
     finally:
         conn.close()
