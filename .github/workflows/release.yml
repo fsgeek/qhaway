@@ -63,6 +63,8 @@ jobs:
       - name: Publish to TestPyPI
         # --check-url makes re-runs idempotent: files already on TestPyPI are
         # skipped instead of failing the workflow.
+        # zizmor: ignore[use-trusted-publishing] -- deliberate: manual real-PyPI
+        # publish + token-based TestPyPI until the controls above are built (2026-09-03).
         run: uv publish --publish-url https://test.pypi.org/legacy/ --check-url https://test.pypi.org/simple/ --token "$PYPI_TEST_TOKEN" dist/*
         env:
           PYPI_TEST_TOKEN: ${{ secrets.PYPI_DEPLOY_KEY_TEST }}
