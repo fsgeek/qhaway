@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -22,10 +25,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -51,10 +56,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -72,3 +79,32 @@ jobs:
           printf -- '---\nname: smoke\ntype: project\ndescription: wheel smoke\n---\nbody\n' > smoke-store/smoke.md
           "$BIN/qhaway" index --dir smoke-store
           grep -q "smoke" smoke-store/MEMORY.md  # the main command wrote the index
+
+  audit:
+    # Security floor, kept green: known-vuln scan of locked deps, static
+    # analysis of the source, and workflow-security lint. Tool versions pinned;
+    # bump them deliberately. GH_TOKEN lets zizmor resolve pinned action SHAs.
+    name: audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          enable-cache: true
+
+      - name: Audit locked runtime dependencies for known vulnerabilities
+        run: |
+          uv export --no-emit-project --no-dev -o requirements-audit.txt
+          uvx pip-audit==2.10.1 -r requirements-audit.txt --no-deps
+
+      - name: Static analysis (bandit, medium+)
+        run: uvx bandit==1.9.4 -r src -ll
+
+      - name: Workflow security lint (zizmor)
+        run: uvx zizmor==1.30.0 .github/workflows/
+        env:
+          GH_TOKEN: ${{ github.token }}
