@@ -83,9 +83,13 @@ def slugify(title: str) -> str:
     if len(cleaned.encode("utf-8")) <= _SLUG_MAX:
         return cleaned
     # Too long for the filesystem. Preserve a trailing ISO date (the parse layer
-    # reads date_hint off the stem), append a hash of the FULL title so distinct
-    # long titles stay distinct, and truncate the head on a word boundary to fit.
-    digest = hashlib.sha256(title.encode("utf-8")).hexdigest()[:8]
+    # reads date_hint off the stem), append a hash so distinct long titles stay
+    # distinct, and truncate the head on a word boundary to fit. The hash is of
+    # the CLEANED form, not the raw title: every spelling that cleans to the
+    # same slug ("My Title", "my-title", a pre-cap stem read off disk) must cap
+    # to the same slug, or supersedes/links written from one spelling dangle
+    # against files written from another (the 2026-09-03 field failure).
+    digest = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:8]
     date_match = _TRAILING_DATE.search(cleaned)
     tail = f"-{date_match.group(1)}" if date_match else ""
     head = cleaned[: date_match.start()] if date_match else cleaned
