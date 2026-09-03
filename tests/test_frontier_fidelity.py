@@ -15,17 +15,15 @@ Three mechanisms, each pinned here:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from qhaway import model, project, reconcile, server
 
 
 LONG_TITLE = (
-    "M1 evidence map v4 written Sep 1 2026 docs m1 exit evidence map commit stamped "
-    "witness 11 is the single item gating the PIs D1 Part C selection candidate region "
-    "14 12 2 where Q1 Q5 gaps are exactly zero and this title keeps going long enough "
-    "to overflow the slug cap by a comfortable margin for the test"
+    "M1 evidence map v4 written Sep 1 2026 witness 11 is the single item gating "
+    "the PIs D1 Part C selection candidate region 14 12 2 where Q1 Q5 gaps are "
+    "exactly zero overflowing the slug cap but not the filesystem"
 )
 
 
@@ -92,15 +90,17 @@ def test_month_name_kebab_dates_populate_date_hint(tmp_path):
     assert parse.parse_memory_file(str(f))["date_hint"] == "20260903"
 
 
-def test_newer_mtime_outranks_alphabetical_order(tmp_path):
-    # No date_hint anywhere: the frontier must still be recency, not the alphabet.
-    zebra = tmp_path / "a-alphabetically-first.md"
-    zebra.write_text("---\nname: older\ntype: project\ndescription: older\n---\nb\n", encoding="utf-8")
-    newer = tmp_path / "z-alphabetically-last.md"
-    newer.write_text("---\nname: newer\ntype: project\ndescription: newer\n---\nb\n", encoding="utf-8")
-    old = 1_600_000_000
-    os.utime(zebra, ns=(old * 10**9, old * 10**9))
-    os.utime(newer, ns=((old + 5000) * 10**9, (old + 5000) * 10**9))
+def test_month_name_date_orders_against_dashed_date(tmp_path):
+    # Cross-format recency: a month-name-dated stem must outrank an older
+    # ISO-dashed one, and alphabet must not decide. (The index stays a pure
+    # function of content — test_cli_idempotence pins that mtime must NOT
+    # order it, so recency rides date_hint, never stat.)
+    (tmp_path / "a-map-written-2026-09-01-alphabetically-first.md").write_text(
+        "---\nname: older map\ntype: project\ndescription: older\n---\nb\n", encoding="utf-8"
+    )
+    (tmp_path / "witness-11-searched-sep-3-2026.md").write_text(
+        "---\nname: newer witness\ntype: project\ndescription: newer\n---\nb\n", encoding="utf-8"
+    )
 
     reconcile.reconcile(str(tmp_path))
     conn = model.get_connection(str(tmp_path))
@@ -108,4 +108,4 @@ def test_newer_mtime_outranks_alphabetical_order(tmp_path):
         out = project.project_slice(conn, budget=8000)
     finally:
         conn.close()
-    assert out.index("newer") < out.index("older")
+    assert out.index("newer witness") < out.index("older map")
