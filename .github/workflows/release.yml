@@ -6,6 +6,22 @@ name: Release
 # and works from TestPyPI" and "strangers get it": verify, then run
 #   uv publish --token "$PYPI_DEPLOY_KEY_REAL" dist/qhaway-X.Y.Z*
 # (Decision 2026-09-03; revisit when the project has more release history.)
+#
+# If/when auto-publish to real PyPI is built, the controls it requires (agreed
+# 2026-09-03, before any implementation):
+#   1. Trusted publishing (OIDC) — no long-lived token in secrets; configured
+#      on pypi.org by the account owner, scoped to this repo+workflow+environment.
+#   2. A protected `release` GitHub environment with a required reviewer — the
+#      same human judgment point as today's manual publish, minus the toil.
+#   3. Tag protection: only maintainers may push v* tags (the trigger).
+#   4. PEP 740 provenance attestations, so an installed wheel is traceable to
+#      the CI run and commit that produced it.
+#   5. This smoke step stays in the path — nothing publishes what it hasn't
+#      installed and run.
+#
+# Note on --check-url: a workflow_dispatch on main after unreleased commits
+# will correctly FAIL here — same version, different bytes. That is the guard
+# working (it means the version was not bumped), not a pipeline bug.
 
 on:
   push:
