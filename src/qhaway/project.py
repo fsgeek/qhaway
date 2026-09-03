@@ -7,6 +7,7 @@ from functools import cmp_to_key
 from typing import Any
 
 from qhaway.model import fetch_nodes
+from qhaway.reconcile import slugify
 
 
 DEFAULT_BUDGET = 24_000
@@ -95,7 +96,10 @@ def _superseded_slugs(db_conn: Any) -> set[str]:
         )
     except Exception:
         return set()
-    return {row[0] for row in cursor.fetchall()}
+    # Normalize through slugify: the 0.5.0 cap means an edge and its target file
+    # may carry different-era spellings of the same slug (capped vs pre-cap);
+    # slugify is deterministic and idempotent, so both eras meet through it.
+    return {slugify(row[0]) for row in cursor.fetchall()}
 
 
 def _is_link_superseded(row: dict[str, Any], superseded_slugs: set[str], status: str) -> bool:
@@ -107,7 +111,7 @@ def _is_link_superseded(row: dict[str, Any], superseded_slugs: set[str], status:
     if status != "live":
         return False
     stem = str(row["file"]).removesuffix(".md")
-    return stem in superseded_slugs
+    return slugify(stem) in superseded_slugs
 
 
 def _normalize_row(values: dict[str, Any]) -> dict[str, Any]:
@@ -133,6 +137,9 @@ def _compare_rows(left: dict[str, Any], right: dict[str, Any]) -> int:
         cmp = _compare_desc_string(left.get(key), right.get(key))
         if cmp:
             return cmp
+    # Recency rides date_hint only: test_cli_idempotence pins the index as a
+    # pure function of content, so mtime must never order it. Filename is the
+    # deterministic last resort for undated stems.
     return (left["file"] > right["file"]) - (left["file"] < right["file"])
 
 

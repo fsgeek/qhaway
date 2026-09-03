@@ -14,6 +14,10 @@ TOMBSTONE_NAMES = {"SUPERSEDED", "DELETED"}
 WIKILINK_RE = re.compile(r"\[\[([^\]\|#]+)(?:[|#][^\]]*)?\]\]")
 DATE_RE = re.compile(r"(?:^|_)(\d{8})(?:_|$)")
 DASHED_DATE_RE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
+_MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split()
+MONTH_DATE_RE = re.compile(
+    r"(?:^|-)(" + "|".join(_MONTHS) + r")[a-z]*-(\d{1,2})-(\d{4})(?!\d)"
+)
 
 
 def parse_memory_file(filepath: str) -> dict[str, Any]:
@@ -167,6 +171,10 @@ def _date_hint(stem: str, metadata: dict[str, Any]) -> str | None:
     dashed = DASHED_DATE_RE.search(stem)
     if dashed:
         return "".join(dashed.groups())
+    monthly = MONTH_DATE_RE.search(stem)
+    if monthly:
+        month, day, year = monthly.groups()
+        return f"{year}{_MONTHS.index(month) + 1:02d}{int(day):02d}"
     return None
 
 
