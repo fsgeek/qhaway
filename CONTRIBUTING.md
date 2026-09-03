@@ -49,6 +49,20 @@ write tooling, and audit are real later ideas, deliberately out of scope here �
 see the "Design philosophy" section of the README. A PR that adds one of these
 is more likely to start as an issue discussing whether it belongs at all.
 
+## Security review
+
+The `audit` CI job (pip-audit, bandit, zizmor — pinned versions) must stay at
+zero findings. Two rules keep it honest:
+
+- **Suppress at the site, with the reason.** A false positive gets an inline
+  `# nosec <id>` / `# zizmor: ignore[<audit>]` comment saying *why*, right
+  where a reviewer will read it — never a config-file exclusion.
+- **Touch a trust boundary, update the threat model.** If your change alters
+  what qhaway parses, writes, installs, serves, or connects to, say how
+  [`docs/threat-model.md`](docs/threat-model.md) is affected in the PR — even
+  when the answer is "it isn't, because…". Vulnerabilities go through private
+  reporting (see [`SECURITY.md`](SECURITY.md)), not public issues.
+
 ## Reporting a bug
 
 Open an issue with the smallest reproduction you can manage. If it's a
