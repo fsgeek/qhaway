@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write  # upload artifacts to the GitHub release
+      id-token: write  # OIDC for trusted publishing to TestPyPI
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -63,11 +64,14 @@ jobs:
       - name: Publish to TestPyPI
         # --check-url makes re-runs idempotent: files already on TestPyPI are
         # skipped instead of failing the workflow.
-        # zizmor: ignore[use-trusted-publishing] -- deliberate: manual real-PyPI
-        # publish + token-based TestPyPI until the controls above are built (2026-09-03).
-        run: uv publish --publish-url https://test.pypi.org/legacy/ --check-url https://test.pypi.org/simple/ --token "$PYPI_TEST_TOKEN" dist/*
+        # Trusted publishing (OIDC) once the TestPyPI publisher is configured
+        # (docs/trusted-publishing-setup.md); the token env is the fallback so
+        # the step works before and during the cutover, and is removed after.
+        # zizmor: ignore[use-trusted-publishing] -- real-PyPI stays manual by the
+        # decision above; this step IS moving to trusted publishing for TestPyPI.
+        run: uv publish --publish-url https://test.pypi.org/legacy/ --check-url https://test.pypi.org/simple/ --trusted-publishing automatic dist/*
         env:
-          PYPI_TEST_TOKEN: ${{ secrets.PYPI_DEPLOY_KEY_TEST }}
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_DEPLOY_KEY_TEST }}
 
       - name: Attach artifacts to the GitHub release (if one exists for this tag)
         if: github.ref_type == 'tag'
