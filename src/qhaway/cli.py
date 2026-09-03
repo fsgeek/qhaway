@@ -230,13 +230,16 @@ def write_index(directory: str, budget: int, style: str = "exit") -> None:
         # honest declaration is the whole point. The count's digit width is bounded
         # (a few hundred memories at most), so any drift between probe and final
         # count is sub-byte against the reserve and never pushes over budget.
-        probe = project.project_slice_with_overflow(conn, budget=budget)
+        hint = "tool" if style == "live" else "cli"
+        probe = project.project_slice_with_overflow(conn, budget=budget, hint=hint)
         reserve = (
             len(compose_footer(sum(probe.overflow.omitted_counts.values())).encode("utf-8"))
             + len(reconcile_mod.signature_line(""))
             + 2
         )
-        result = project.project_slice_with_overflow(conn, budget=max(0, budget - reserve))
+        result = project.project_slice_with_overflow(
+            conn, budget=max(0, budget - reserve), hint=hint
+        )
         footer = compose_footer(sum(result.overflow.omitted_counts.values()))
     finally:
         conn.close()

@@ -82,7 +82,7 @@ def test_exit_footer_count_matches_actual_omissions(tmp_path):
     cli.main(["reconcile", "--dir", str(tmp_path), "--emit"])
     cli.main(["exit", "--dir", str(tmp_path)])
 
-    final = (tmp_path / "MEMORY.md").read_text()
+    final = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")  # NOT the locale: cp1252 on Windows
     claimed = int(re.search(r"(\d+) set aside", final).group(1))
     # count the links actually present in the shipped index
     present = len(re.findall(r"\]\([^)]+\.md\)", final))

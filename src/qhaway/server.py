@@ -64,7 +64,7 @@ def _exclusive_write(root: Path, stem: str, text: str) -> str:
             fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
             continue
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
         return name
     raise RuntimeError(
@@ -86,7 +86,8 @@ def recall(type=None, role=None, status="live", memory_dir=".", reground=None) -
     conn = model.get_connection(str(root))
     try:
         result = project.project_slice_with_overflow(
-            conn, budget=project.DEFAULT_BUDGET, content_type=type, role=role, status=status
+            conn, budget=project.DEFAULT_BUDGET, content_type=type, role=role, status=status,
+            hint="tool",
         )
         claims = _claim_nodes(conn, type, role, status) if reground is not None else []
     finally:

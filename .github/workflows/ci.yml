@@ -12,8 +12,15 @@ concurrency:
 
 jobs:
   test:
-    name: test (Python 3.14)
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    # Linux is where it was built; macOS is the Claude Desktop host; Windows is
+    # the majority desktop and the one that surfaced fcntl/NTFS/CRLF breakage
+    # nothing else could see (2026-09-01).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
 

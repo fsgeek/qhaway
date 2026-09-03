@@ -81,7 +81,7 @@ def test_install_registers_mcp_server(tmp_path):
     server = d["mcpServers"]["qhaway"]
     # command is uvx, resolved to an absolute path when on PATH (CC spawns with a
     # minimal PATH); bare "uvx" only as the unresolvable fallback.
-    assert server["command"].endswith("uvx")
+    assert Path(server["command"]).stem.lower() == "uvx"  # uvx, or uvx.EXE on Windows
     assert "serve" in server["args"]
     # no hardcoded --dir: serve derives the slug dir from CLAUDE_PROJECT_DIR
     assert "--dir" not in server["args"]

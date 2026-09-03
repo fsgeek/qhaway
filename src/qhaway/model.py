@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import sqlite3
 import sys
@@ -10,6 +9,26 @@ import time
 from pathlib import Path
 
 from qhaway import parse
+
+try:  # POSIX
+    import fcntl
+
+    def _try_lock(handle) -> None:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock(handle) -> None:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+except ImportError:  # Windows: lock one byte of the lock file instead
+    import msvcrt
+
+    def _try_lock(handle) -> None:
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            raise BlockingIOError(str(exc)) from exc
+
+    def _unlock(handle) -> None:
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
 SCHEMA_VERSION = 2
 DB_NAME = ".qhaway.db"
@@ -209,10 +228,12 @@ def rebuild_database(memory_dir: str) -> None:
     lock_path = root / LOCK_NAME
     lock_fd = open(lock_path, "a+", encoding="utf-8")
     deadline = time.monotonic() + 5.0
+    locked = False
     try:
         while True:
             try:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _try_lock(lock_fd)
+                locked = True
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
@@ -230,7 +251,10 @@ def rebuild_database(memory_dir: str) -> None:
         finally:
             conn.close()
     finally:
-        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        # Only release a lock we hold: unlocking an unheld region is a no-op
+        # under flock but raises under msvcrt — and would mask the timeout error.
+        if locked:
+            _unlock(lock_fd)
         lock_fd.close()
         # Do not delete the lock file (avoids deletion races, U2-2).
 
@@ -243,6 +267,9 @@ def execute_query_with_retry(conn, query, memory_dir, params=None, _already_rebu
         is_drift = any(marker in message for marker in _DRIFT_MARKERS)
         if not is_drift or _already_rebuilt:
             raise
+        # The drifted connection is unusable anyway, and on Windows the rebuild
+        # cannot unlink a db file this handle still holds open.
+        conn.close()
         rebuild_database(memory_dir)
         new_conn = get_connection(memory_dir)
         try:

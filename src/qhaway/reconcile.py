@@ -7,6 +7,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -173,18 +174,93 @@ def write_readonly(path: Path, text: str) -> None:
     0444 temp over an existing 0444 file succeeds via directory write; direct
     open('w') on the 0444 target raises PermissionError. No chmod-before-replace
     fallback needed on POSIX filesystems.
+
+    NTFS (Windows Python 3.14, 2026-09-01): os.replace raises PermissionError
+    over a read-only target — Windows refuses to replace or delete one — so
+    Windows goes through _replace() below. The friction signal is unchanged:
+    direct open('w') still fails there too.
     """
     directory = path.parent
     fd, tmp_name = tempfile.mkstemp(dir=str(directory), prefix=".qhaway-tmp-")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        # newline="\n": the budget was computed on LF bytes; text-mode CRLF on
+        # Windows would ship a file larger than the budget it declares.
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
         os.chmod(tmp_name, 0o444)
-        os.replace(tmp_name, path)
+        _replace(tmp_name, str(path))
     except BaseException:
         if os.path.exists(tmp_name):
+            if os.name == "nt":
+                os.chmod(tmp_name, 0o644)  # Windows refuses to unlink a read-only file
             os.unlink(tmp_name)
         raise
+
+
+def _replace(src: str, dst: str) -> None:
+    """Atomically move src over dst. POSIX: os.replace, done. Windows: MoveFileEx
+    (what os.replace uses) refuses a read-only target, refuses a target another
+    handle has open, and is not atomic for a concurrent reader — measured
+    2026-09-01: 802/900 writer failures and 122 reader not-founds under a race.
+    So on Windows: a handle-based rename with POSIX semantics (atomic for
+    readers, ignores the read-only attribute), retried briefly while a reader
+    without FILE_SHARE_DELETE (any Python open()) holds the target."""
+    if os.name != "nt":
+        os.replace(src, dst)
+        return
+    deadline = time.monotonic() + 2.0
+    delay = 0.001
+    while True:
+        try:
+            _nt_posix_rename(src, dst)
+            return
+        except OSError as exc:
+            # 5 access denied, 32 sharing violation: a reader has it open, or the
+            # attribute race lost — transient by construction, so wait it out.
+            if getattr(exc, "winerror", None) not in (5, 32) or time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.05)
+
+
+def _nt_posix_rename(src: str, dst: str) -> None:
+    """SetFileInformationByHandle(FileRenameInfoEx) with REPLACE_IF_EXISTS |
+    POSIX_SEMANTICS | IGNORE_READONLY_ATTRIBUTE. Falls back to clearing the
+    read-only bit + os.replace where the Ex call is unsupported (pre-1607
+    Windows, non-NTFS volumes)."""
+    import ctypes
+    import ctypes.wintypes as wt
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateFileW.restype = wt.HANDLE
+    k32.SetFileInformationByHandle.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD]
+    DELETE, SHARE_ALL, OPEN_EXISTING, ATTR_NORMAL = 0x00010000, 0x7, 3, 0x80
+    FILE_RENAME_INFO_EX = 22
+    FLAGS = 0x1 | 0x2 | 0x40  # REPLACE_IF_EXISTS | POSIX_SEMANTICS | IGNORE_READONLY_ATTRIBUTE
+    INVALID = wt.HANDLE(-1).value
+
+    handle = k32.CreateFileW(src, DELETE, SHARE_ALL, None, OPEN_EXISTING, ATTR_NORMAL, None)
+    if handle == INVALID:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        name = os.path.abspath(dst).encode("utf-16-le")
+        # FILE_RENAME_INFO: DWORD Flags (padded to 8); HANDLE RootDirectory;
+        # DWORD FileNameLength; WCHAR FileName[]  — x64 layout, offsets 0/8/16/20.
+        size = 20 + len(name) + 2
+        buf = ctypes.create_string_buffer(size)
+        ctypes.memmove(buf, bytes(ctypes.c_uint32(FLAGS)), 4)
+        ctypes.memmove(ctypes.addressof(buf) + 16, bytes(ctypes.c_uint32(len(name))), 4)
+        ctypes.memmove(ctypes.addressof(buf) + 20, name, len(name))
+        if k32.SetFileInformationByHandle(handle, FILE_RENAME_INFO_EX, buf, size):
+            return
+        err = ctypes.get_last_error()
+    finally:
+        k32.CloseHandle(handle)
+    if err not in (50, 87):  # ERROR_NOT_SUPPORTED, ERROR_INVALID_PARAMETER → fallback
+        raise ctypes.WinError(err)
+    if os.path.exists(dst):
+        os.chmod(dst, 0o644)
+    os.replace(src, dst)
 
 
 def reconcile(memory_dir: str, heal: bool = True) -> None:
@@ -284,6 +360,7 @@ def _write_sidecar(sidecar_file: Path, output_hash: str) -> None:
     sidecar_file.write_text(
         json.dumps({"version": 1, "last_output_hash": output_hash}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 

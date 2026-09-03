@@ -21,8 +21,14 @@ def project_slice(
     content_type: str | None = None,
     role: str | None = None,
     status: str = "live",
+    hint: str = "cli",
 ) -> str:
-    """Return a deterministic, budgeted Markdown projection."""
+    """Return a deterministic, budgeted Markdown projection.
+
+    `hint` picks how the omissions footer says "see the rest": "cli" names the
+    shell command (the CLI, the exit index); "tool" names recall() for surfaces a
+    model reads while the server is running (the live index, recall's output).
+    """
 
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
     superseded_slugs = _superseded_slugs(db_conn)
@@ -47,7 +53,7 @@ def project_slice(
     ]
 
     ordered = sorted(filtered, key=cmp_to_key(_compare_rows))
-    candidate_footer = _candidate_footer(filtered, hidden_superseded)
+    candidate_footer = _candidate_footer(filtered, hidden_superseded, hint)
     fill_budget = max(0, budget - _byte_len(candidate_footer))
 
     included: list[dict[str, Any]] = []
@@ -59,7 +65,7 @@ def project_slice(
             current = proposed
 
     omitted = [row for row in filtered if row not in included]
-    footer = _actual_footer(omitted, hidden_superseded)
+    footer = _actual_footer(omitted, hidden_superseded, hint)
     output = _join_lines([current, footer])
     if _byte_len(output) <= budget:
         return output
@@ -69,12 +75,12 @@ def project_slice(
     while included and _byte_len(output) > budget:
         included.pop()
         omitted = [row for row in filtered if row not in included]
-        output = _join_lines([_render_entries(included), _actual_footer(omitted, hidden_superseded)])
+        output = _join_lines([_render_entries(included), _actual_footer(omitted, hidden_superseded, hint)])
 
     if _byte_len(output) <= budget:
         return output
 
-    return _fit_footer_only(_actual_footer(filtered, hidden_superseded), budget)
+    return _fit_footer_only(_actual_footer(filtered, hidden_superseded, hint), budget)
 
 
 def _superseded_slugs(db_conn: Any) -> set[str]:
@@ -202,31 +208,31 @@ def _one_line(text: Any, limit: int = 140) -> str:
     return collapsed[: limit - 3].rstrip() + "..."
 
 
-def _candidate_footer(filtered: list[dict[str, Any]], hidden_superseded: list[dict[str, Any]]) -> str:
+def _candidate_footer(filtered: list[dict[str, Any]], hidden_superseded: list[dict[str, Any]], hint: str) -> str:
     counts: dict[str, int] = {}
     for row in filtered:
         counts[row["content_type"]] = counts.get(row["content_type"], 0) + 1
     lines = [
-        _omission_line(content_type, count)
+        _omission_line(content_type, count, hint)
         for content_type, count in _ordered_counts(counts)
         if count > 0
     ]
     if hidden_superseded:
-        lines.append(_superseded_line(len(hidden_superseded)))
+        lines.append(_superseded_line(len(hidden_superseded), hint))
     return _join_lines(lines)
 
 
-def _actual_footer(omitted: list[dict[str, Any]], hidden_superseded: list[dict[str, Any]]) -> str:
+def _actual_footer(omitted: list[dict[str, Any]], hidden_superseded: list[dict[str, Any]], hint: str) -> str:
     counts: dict[str, int] = {}
     for row in omitted:
         counts[row["content_type"]] = counts.get(row["content_type"], 0) + 1
     lines = [
-        _omission_line(content_type, count)
+        _omission_line(content_type, count, hint)
         for content_type, count in _ordered_counts(counts)
         if count > 0
     ]
     if hidden_superseded:
-        lines.append(_superseded_line(len(hidden_superseded)))
+        lines.append(_superseded_line(len(hidden_superseded), hint))
     return _join_lines(lines)
 
 
@@ -236,12 +242,18 @@ def _ordered_counts(counts: dict[str, int]) -> list[tuple[str, int]]:
     return ordered
 
 
-def _omission_line(content_type: str, count: int) -> str:
-    return f"+{count} {content_type} memories not shown; `qhaway index --type {content_type}`"
+def _omission_line(content_type: str, count: int, hint: str) -> str:
+    return f"+{count} {content_type} memories not shown; {_see_hint(hint, 'type', content_type)}"
 
 
-def _superseded_line(count: int) -> str:
-    return f"+{count} superseded memories hidden; `qhaway index --status superseded`"
+def _superseded_line(count: int, hint: str) -> str:
+    return f"+{count} superseded memories hidden; {_see_hint(hint, 'status', 'superseded')}"
+
+
+def _see_hint(hint: str, key: str, value: str) -> str:
+    if hint == "tool":
+        return f'`recall({key}="{value}")`'
+    return f"`qhaway index --{key} {value}`"
 
 
 def _join_lines(lines: Any) -> str:
@@ -292,9 +304,10 @@ def project_slice_with_overflow(
     content_type: str | None = None,
     role: str | None = None,
     status: str = "live",
+    hint: str = "cli",
 ) -> ProjectionResult:
     """Render the slice AND return structured overflow counts (C-1/F-7)."""
-    markdown = project_slice(db_conn, budget, content_type, role, status)
+    markdown = project_slice(db_conn, budget, content_type, role, status, hint)
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
     superseded_slugs = _superseded_slugs(db_conn)
     filtered = [
