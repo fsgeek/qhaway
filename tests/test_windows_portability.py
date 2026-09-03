@@ -88,3 +88,32 @@ def test_write_readonly_survives_concurrent_writers_and_readers(tmp_path):
 
     assert errors == []
     assert target.read_text(encoding="utf-8").startswith("writer ")
+
+
+def test_rebuild_database_waits_out_a_transient_open_connection(tmp_path):
+    # Two concurrent remember() calls on a FRESH store: thread B sees A's
+    # half-created schema as drift and rebuilds — but A's short-lived connection
+    # still holds the db file, and Windows refuses to delete an open file
+    # (WinError 32; POSIX allows it, which is why only the 2-core Windows CI
+    # runner ever fired this — 2/200 iterations under stress). Files are truth,
+    # so the rebuild may simply wait for the transient holder and then rebuild
+    # from the topic files: nothing can be lost.
+    import sqlite3
+    import threading
+    import time
+
+    (tmp_path / "one.md").write_text(
+        "---\nname: one\ntype: project\ndescription: d\n---\nbody\n", encoding="utf-8"
+    )
+    model.rebuild_database(str(tmp_path))
+    holder = sqlite3.connect(str(model.db_path(tmp_path)), check_same_thread=False)
+    holder.execute("SELECT count(*) FROM nodes").fetchone()
+    threading.Timer(0.3, holder.close).start()
+
+    model.rebuild_database(str(tmp_path))  # must ride out the 0.3s, not raise
+
+    conn = model.get_connection(str(tmp_path))
+    try:
+        assert [n["file"] for n in model.fetch_nodes(conn)] == ["one.md"]
+    finally:
+        conn.close()
