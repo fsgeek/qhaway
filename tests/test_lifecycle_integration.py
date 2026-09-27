@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from qhaway import cli
+from qhaway import cli, paths
 
 
 def _run(args, env):
@@ -14,7 +14,7 @@ def _run(args, env):
 
 def test_dormant_then_active_via_topic_file(tmp_path, capsys):
     proj = tmp_path / "proj"; proj.mkdir()
-    derived = tmp_path / ".claude/projects" / str(proj).replace("/", "-") / "memory"
+    derived = paths.memory_dir_for(str(proj), home=tmp_path)
     env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
     # 1) dormant: no memory dir at all -> no-op, nothing written
     assert _run(["session-start"], env) == 0
@@ -31,7 +31,7 @@ def test_dormant_then_active_via_topic_file(tmp_path, capsys):
 
 def test_lone_handwritten_memory_md_stays_dormant(tmp_path):
     proj = tmp_path / "proj"; proj.mkdir()
-    derived = tmp_path / ".claude/projects" / str(proj).replace("/", "-") / "memory"
+    derived = paths.memory_dir_for(str(proj), home=tmp_path)
     derived.mkdir(parents=True)
     (derived / "MEMORY.md").write_text("# hand written, no topics\n")
     env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
