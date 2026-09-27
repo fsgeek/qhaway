@@ -153,7 +153,7 @@ def _resolve_dir(ns, environ=None, home=None, cwd=None) -> str:
     if derived is not None:
         return str(derived)
     cwd = os.getcwd() if cwd is None else cwd
-    return str(paths.memory_dir_for(cwd, home=home))
+    return str(paths.resolve(cwd, home=home))
 
 
 def _serve(directory: str, inline_budget: int | None = None) -> int:
