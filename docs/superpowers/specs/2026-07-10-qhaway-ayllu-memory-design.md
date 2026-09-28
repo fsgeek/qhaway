@@ -3,6 +3,12 @@
 **Date:** 2026-07-10
 **Status:** Approved architectural umbrella; implementation requires focused
 follow-up specs
+**Outcome (2026-09-28):** Stages 1 and 2a were built in `../llm-memory` (July
+2026), then removed there by the khipumaq redesign (`444e14f`, 2026-09-03,
+decision D2 in `docs/superpowers/specs/2026-09-01-khipumaq-design.md`). The
+Codex episodic-instrument branch was never merged. Episodic memory now lives in
+khipumaq; qhaway keeps curated memory only. This spec and its stage documents
+remain as the record.
 **Scope:** Architectural umbrella for curated memory, episodic evidence,
 cross-project federation, and Claude/Codex delivery
 **Product identity:** Deferred
