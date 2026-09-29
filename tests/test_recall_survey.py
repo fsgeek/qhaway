@@ -116,3 +116,80 @@ def test_written_index_declares_completeness(tmp_path):
 
     index = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
     assert "2 matching memories; all shown." in index
+
+
+# --- query (#20 part 2): match the trigger fields, never bodies ---------------
+
+
+def _write_full(root: Path, stem: str, description: str, body: str = "body\n", extra: str = "") -> None:
+    (root / f"{stem}.md").write_text(
+        f"---\nname: {stem}\ntype: project\ndescription: {description}\n{extra}---\n{body}",
+        encoding="utf-8",
+    )
+
+
+def test_query_matches_title_and_description_case_insensitively(tmp_path):
+    _write_full(tmp_path, "arango-privileges", "no scoped create-database right")
+    _write_full(tmp_path, "release-slip", "the tag landed on the wrong commit, ArangoDB unrelated")
+    _write_full(tmp_path, "weather", "rain again")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(query="ARANGO", memory_dir=str(tmp_path))
+
+    assert text.splitlines()[0] == "2 matching memories; all shown."
+    assert "arango-privileges" in text and "release-slip" in text
+    assert "weather" not in text
+
+
+def test_query_requires_every_term(tmp_path):
+    _write_full(tmp_path, "tag-slip", "the release tag landed on the wrong commit")
+    _write_full(tmp_path, "tag-colors", "label colors for issues")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(query="tag release", memory_dir=str(tmp_path))
+
+    assert len(_entries(text)) == 1
+    assert "tag-slip" in text
+
+
+def test_query_never_matches_bodies(tmp_path):
+    _write_full(tmp_path, "plain", "nothing to see", body="the word zanzibar is only in the body\n")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(query="zanzibar", memory_dir=str(tmp_path))
+
+    assert text.splitlines()[0] == "No matching memories."
+
+
+def test_query_filters_the_superseded_count_too(tmp_path):
+    _write_full(tmp_path, "arango-old", "old arango note", extra="status: superseded\n")
+    _write_full(tmp_path, "weather-old", "old weather note", extra="status: superseded\n")
+    _write_full(tmp_path, "arango-new", "new arango note")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(query="arango", memory_dir=str(tmp_path))
+
+    assert "+1 superseded memories hidden" in text
+
+
+def test_overflow_suggests_query_but_a_complete_slice_does_not(tmp_path):
+    _write_memory(tmp_path, "alpha")
+    server.initialize_server(str(tmp_path))
+    assert "query" not in server.recall(memory_dir=str(tmp_path))
+
+    _bulk(tmp_path, 200)
+    server.initialize_server(str(tmp_path))
+    assert 'recall(query="...")' in server.recall(memory_dir=str(tmp_path))
+
+
+def test_recall_tool_accepts_query(tmp_path):
+    _write_full(tmp_path, "arango-privileges", "no scoped right")
+    _write_full(tmp_path, "weather", "rain")
+    server.initialize_server(str(tmp_path))
+
+    mcp = server.build_server(str(tmp_path))
+    result = asyncio.run(mcp.call_tool("recall", {"query": "arango"}))
+
+    text = result.content[0].text
+    assert "arango-privileges" in text
+    assert "weather" not in text
