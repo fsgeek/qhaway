@@ -1,7 +1,7 @@
 [project]
 name = "qhaway"
 version = "0.5.3"
-description = "A truncation-proof projection of a Markdown memory index: regenerate MEMORY.md to fit the loader's budget and declare what it sets aside, instead of being silently cut."
+description = "Keep an agent's Markdown memory index within its loader's budget, and make what it sets aside cheap to get back."
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
