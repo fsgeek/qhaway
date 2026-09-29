@@ -12,6 +12,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ### Changed
 
+- The index delivered at session start now names `recall(...)` for what it sets aside, instead of a `qhaway index` command the model reading it cannot run as written. The index written at session end, which Claude Code loads when qhaway is not running, keeps the shell command.
 - PyPI now classifies qhaway as Beta (`Development Status :: 4 - Beta`), not Pre-Alpha, and links to the repository, this changelog and the issue tracker.
 
 ## [0.5.3] - 2026-09-28
