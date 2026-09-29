@@ -9,7 +9,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Tony", email = "fsgeek@cs.ubc.ca" }]
 keywords = ["memory", "index", "markdown", "llm", "agent", "sqlite", "mcp"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
     "Topic :: Utilities",
 ]

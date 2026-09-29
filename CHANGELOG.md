@@ -2,6 +2,12 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [Unreleased]
+
+### Changed
+
+- PyPI now classifies qhaway as Beta (`Development Status :: 4 - Beta`), not Pre-Alpha, and links to the repository, this changelog and the issue tracker.
+
 ## [0.5.3] - 2026-09-28
 
 ### Fixed

@@ -20,7 +20,7 @@ qhaway is [`uv`](https://docs.astral.sh/uv/)-managed and targets Python 3.14.
 git clone https://github.com/fsgeek/qhaway
 cd qhaway
 uv sync --group dev      # installs the package + test tooling
-uv run pytest -q         # 152 passed, 3 skipped is a clean run
+uv run pytest -q         # a clean run: all pass, 3 skipped
 ```
 
 The 3 skips are the live-store (`reground`) tests — they need an ArangoDB and a
@@ -67,8 +67,10 @@ zero findings. Two rules keep it honest:
 
 For maintainers:
 
-1. In one PR, bump `version` in `pyproject.toml` and add its entry to
-   [`CHANGELOG.md`](CHANGELOG.md), written for someone installing qhaway.
+1. Changes that users will notice add a line under `## [Unreleased]` in
+   [`CHANGELOG.md`](CHANGELOG.md) when they merge, written for someone
+   installing qhaway. To release, one PR bumps `version` in `pyproject.toml`
+   and renames that heading to the new version and date.
 2. After it merges, tag the merge commit on `main`: `git tag -s vX.Y.Z` and
    push the tag. The release workflow refuses a tag that doesn't match
    `pyproject.toml` or has no changelog entry, then publishes to TestPyPI.
