@@ -121,9 +121,9 @@ def test_written_index_declares_completeness(tmp_path):
 # --- query (#20 part 2): match the trigger fields, never bodies ---------------
 
 
-def _write_full(root: Path, stem: str, description: str, body: str = "body\n", extra: str = "") -> None:
+def _write_full(root: Path, stem: str, description: str, body: str = "body\n") -> None:
     (root / f"{stem}.md").write_text(
-        f"---\nname: {stem}\ntype: project\ndescription: {description}\n{extra}---\n{body}",
+        f"---\nname: {stem}\ntype: project\ndescription: {description}\n---\n{body}",
         encoding="utf-8",
     )
 
@@ -162,8 +162,11 @@ def test_query_never_matches_bodies(tmp_path):
 
 
 def test_query_filters_the_superseded_count_too(tmp_path):
-    _write_full(tmp_path, "arango-old", "old arango note", extra="status: superseded\n")
-    _write_full(tmp_path, "weather-old", "old weather note", extra="status: superseded\n")
+    # A tombstone name marks a memory superseded; its title falls back to the stem.
+    for stem in ("arango-old", "weather-old"):
+        (tmp_path / f"{stem}.md").write_text(
+            "---\nname: SUPERSEDED — see the new note\ntype: project\n---\nold\n", encoding="utf-8"
+        )
     _write_full(tmp_path, "arango-new", "new arango note")
     server.initialize_server(str(tmp_path))
 
