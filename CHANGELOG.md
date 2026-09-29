@@ -7,6 +7,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 ### Added
 
 - Every projection (the session-start index, `recall()`, `qhaway index`) opens with one line giving the slice's size: `72 matching memories; all shown.`, or `72 matching memories, 24,150 bytes in full; showing 70.` A complete index now says it is complete, instead of being recognizable only by a missing footer.
+- `recall(query="...")` keeps memories whose title, description or filename contains every term, case-insensitively. Bodies are not searched. When a slice overflows, its footer mentions `query`; a slice that fits does not.
 - `recall(limit=N)` caps the entries returned, and the footer still declares the rest. `recall(limit=0)` returns only the counts: on a 72-memory store, 283 bytes instead of about 23KB.
 
 ### Changed

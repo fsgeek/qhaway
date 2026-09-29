@@ -14,6 +14,7 @@ DEFAULT_BUDGET = 24_000
 KNOWN_TYPES = ("user", "feedback", "project", "reference")
 FOOTER_TYPES = KNOWN_TYPES
 ENTRY_SEPARATOR = "\n"
+SEARCH_LINE = 'Or search titles and descriptions: `recall(query="...")`'
 
 
 def project_slice(
@@ -24,6 +25,7 @@ def project_slice(
     status: str = "live",
     hint: str = "cli",
     limit: int | None = None,
+    query: str | None = None,
 ) -> str:
     """Return a deterministic, budgeted Markdown projection.
 
@@ -32,9 +34,12 @@ def project_slice(
     model reads while the server is running (the live index, recall's output).
     `limit` caps the entries shown; limit=0 is a count-only survey. The first line
     always states the slice's size, so a reader knows what it holds before
-    reading on (#20).
+    reading on (#20). `query` keeps rows whose title, description or filename
+    contain every whitespace-separated term, case-insensitively; bodies are never
+    searched — the trigger fields are what the index is made of.
     """
 
+    terms = _query_terms(query)
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
     superseded_slugs = _superseded_slugs(db_conn)
     filtered = [
@@ -44,6 +49,7 @@ def project_slice(
         and not _is_link_superseded(row, superseded_slugs, status)
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
+        and _matches(row, terms)
     ]
     hidden_superseded = [
         row
@@ -55,6 +61,7 @@ def project_slice(
         and status == "live"
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
+        and _matches(row, terms)
     ]
 
     ordered = sorted(filtered, key=cmp_to_key(_compare_rows))
@@ -99,6 +106,15 @@ def project_slice(
         return output
 
     return _fit_footer_only(_join_lines([header(0), _actual_footer(filtered, hidden_superseded, hint)]), budget)
+
+
+def _query_terms(query: str | None) -> list[str]:
+    return query.lower().split() if query else []
+
+
+def _matches(row: dict[str, Any], terms: list[str]) -> bool:
+    text = f"{_title(row)} {row.get('description') or ''} {row['file']}".lower()
+    return all(term in text for term in terms)
 
 
 def _header(total: int, shown: int, full_bytes: int) -> str:
@@ -259,6 +275,8 @@ def _candidate_footer(filtered: list[dict[str, Any]], hidden_superseded: list[di
     ]
     if hidden_superseded:
         lines.append(_superseded_line(len(hidden_superseded), hint))
+    if filtered and hint == "tool":
+        lines.append(SEARCH_LINE)
     return _join_lines(lines)
 
 
@@ -273,6 +291,8 @@ def _actual_footer(omitted: list[dict[str, Any]], hidden_superseded: list[dict[s
     ]
     if hidden_superseded:
         lines.append(_superseded_line(len(hidden_superseded), hint))
+    if omitted and hint == "tool":
+        lines.append(SEARCH_LINE)
     return _join_lines(lines)
 
 
@@ -346,9 +366,11 @@ def project_slice_with_overflow(
     status: str = "live",
     hint: str = "cli",
     limit: int | None = None,
+    query: str | None = None,
 ) -> ProjectionResult:
     """Render the slice AND return structured overflow counts (C-1/F-7)."""
-    markdown = project_slice(db_conn, budget, content_type, role, status, hint, limit)
+    markdown = project_slice(db_conn, budget, content_type, role, status, hint, limit, query)
+    terms = _query_terms(query)
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
     superseded_slugs = _superseded_slugs(db_conn)
     filtered = [
@@ -358,6 +380,7 @@ def project_slice_with_overflow(
         and not _is_link_superseded(row, superseded_slugs, status)
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
+        and _matches(row, terms)
     ]
     omitted = [row for row in filtered if f"]({row['file']})" not in markdown]
     omitted_counts: dict = {}
@@ -374,6 +397,7 @@ def project_slice_with_overflow(
         and status == "live"
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
+        and _matches(row, terms)
     )
 
     overflow = Overflow(

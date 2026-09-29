@@ -44,9 +44,11 @@ Arango to contribute to core qhaway.
 
 ## Scope
 
-This version fixes truncation and nothing else. Full-text search, ranking,
-write tooling, and audit are real later ideas, deliberately out of scope here —
-see the "Design philosophy" section of the README. A PR that adds one of these
+qhaway keeps a memory index within its budget and makes whatever it leaves out
+cheap to get back. That is why `recall(query=...)` searches titles and
+descriptions. Searching bodies, ranking, write tooling, and audit are real later
+ideas, deliberately out of scope here — see the "Design philosophy" section of
+the README. A PR that adds one of these
 is more likely to start as an issue discussing whether it belongs at all.
 
 ## Security review
