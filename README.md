@@ -2,50 +2,63 @@
 
 [![CI](https://github.com/fsgeek/qhaway/actions/workflows/ci.yml/badge.svg)](https://github.com/fsgeek/qhaway/actions/workflows/ci.yml)
 
-*Quechua: "to see / to watch over."* The name states the cure — make the whole
-memory record **visible** instead of silently truncated.
+*Quechua: "to see / to watch over."* The name states the job: watch over what an
+agent carries into each session, and keep everything else in sight.
 
-`qhaway` keeps a Markdown memory index from being silently cut off when it grows
-past the size limit of the system that loads it.
+`qhaway` decides what an agent's memory index spends of its context window, and
+makes whatever it leaves out cheap to get back.
 
 ## The problem
 
-Some agents and tools maintain memory as a directory of small Markdown files plus
-a single curated index (`MEMORY.md`) that points at them. The index is loaded into
-context on startup so the agent boots with a map of what it knows.
+Agents like Claude Code keep memory as a directory of small Markdown files plus
+an index, `MEMORY.md`, that points at them. The index is loaded into context at
+startup, so each session begins with a map of what the agent knows.
 
-That index grows. When it grows past the loader's size limit, it is **silently
-truncated** — cut off with no error raised. The agent boots a *partial self* and
-doesn't know it: everything past the cut is invisible, and a pointer to a file
-that no longer exists rides along just as silently. The honest record is there on
-disk; the loaded view of it is a lie of omission.
+The index grows, and the loader has a limit. Current Claude Code cuts an index
+past about 25KB and appends a warning saying how many lines were lost. Earlier
+versions cut it silently, which is how qhaway began: a 36.8KB, 137-entry index
+against a ~24.4KB limit, with the newest section, including the pointer to the
+latest state, past the cut. Claude Desktop's Cowork reads far less; a Cowork
+session reported about 3.5KB.
 
-This was observed live: a 36.8KB / 137-entry index against a ~24.4KB load limit,
-with the entire latest section — including the pointer to the most recent state —
-falling past the cut.
+A warning doesn't bring back what was cut. The cut is positional: whatever comes
+first is kept, and in an index that grows at the bottom, the newest entries are
+the ones lost. The agent can go looking, but with only the files that means
+searching and reading them, and whatever a search pulls in stays in context for
+the rest of the session. On one real store (85 memories, 239KB), reading the
+files that mention a single topic cost 43–46KB, about twice the whole budgeted
+index.
 
-## The fix
+## The approach
 
-qhaway regenerates `MEMORY.md` itself as a **truncation-proof projection** of the
-memory files:
+Memory is a trade between forgetting and recall. qhaway deletes nothing; the aim
+is to make getting something back, when it's needed, cheaper than carrying it
+all session. qhaway works both sides of that trade:
 
-- **Files stay the write surface.** You keep writing topic `.md` files exactly as
-  you do today. There is no schema to learn and no "save" API to call. qhaway only
-  changes *who writes the index* — a machine, not a hand.
-- **It fits the budget.** The regenerated index is guaranteed to come in under the
-  loader's limit, so it is never silently cut.
-- **No silent loss — ever.** When the index can't fit everything, it doesn't drop
-  entries quietly. It **declares the omission**:
+- **It chooses what to carry.** qhaway regenerates `MEMORY.md` from the memory
+  files, within the loader's budget. User and feedback memories come first, then
+  the rest by recency. A memory that another has superseded is set aside instead
+  of taking space.
+- **It says what it holds.** The first line gives the size of what's loaded:
+  `72 matching memories; all shown.` or
+  `72 matching memories, 24,150 bytes in full; showing 70.` A complete index says
+  so, rather than leaving the reader to infer it from a missing warning.
+- **It makes a miss cheap.** The footer counts the memories left out, by type,
+  and names the call that shows them:
 
   ```
-  +47 project memories not shown — run: qhaway index --type project
+  +60 project memories not shown; `recall(type="project")`
+  Or search titles and descriptions: `recall(query="...")`
   ```
 
-  Truncation becomes *visible selection*. You always know what was set aside and
-  how to see it.
+  On the store above, `recall(query="arango")` returns the one memory about it
+  in 521 bytes, and `recall(limit=0)` returns only the counts, in a few hundred.
+- **Files stay the write surface.** You keep writing topic `.md` files as you do
+  today; there is no schema to learn. qhaway changes who writes the index (a
+  machine, not a hand), and the loader reads `MEMORY.md` as before.
 
-The loader keeps reading `MEMORY.md` exactly as before — now complete-for-what-it-
-claims and guaranteed under budget. Nothing downstream changes.
+The figures come from one store, checked against Claude Code 2.1.284. Treat them
+as an example, not a benchmark.
 
 ## Install
 
@@ -236,7 +249,7 @@ the index rebuilds from the files. Nothing is interpreted, merged, or lost.
 
 ## Design philosophy
 
-One pain, fixed completely: **truncation**. qhaway keeps the index within budget
+One pain, fixed completely: **an index too big for its loader**. qhaway keeps the index within budget
 and makes what it sets aside cheap to get back, which is why `recall` can search
 titles and descriptions. Searching bodies, deep audit, write tooling, and ranking
 sophistication are deliberately *not* in this version — each is a real later
