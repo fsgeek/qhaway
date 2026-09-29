@@ -123,8 +123,10 @@ source of truth.
 
 Two verbs are exposed to the model:
 
-- `recall(type?, role?, status?, limit?)` — pure read; returns the budgeted
-  projection (omit args for the working set). Its first line gives the slice's
+- `recall(type?, role?, status?, limit?, query?)` — pure read; returns the
+  budgeted projection (omit args for the working set). `query` keeps memories
+  whose title, description or filename contains every term (case-insensitive;
+  bodies are not searched). Its first line gives the slice's
   size: `72 matching memories; all shown.`, or the full size in bytes and how
   many are shown. `limit` caps the entries; `limit=0` returns only the counts,
   so a caller can see what a slice would cost before loading it.
@@ -234,9 +236,11 @@ the index rebuilds from the files. Nothing is interpreted, merged, or lost.
 
 ## Design philosophy
 
-One pain, fixed completely: **truncation**. Full-text search, deep audit, write
-tooling, and ranking sophistication are deliberately *not* in this version — each
-is a real later idea, none is this version's job.
+One pain, fixed completely: **truncation**. qhaway keeps the index within budget
+and makes what it sets aside cheap to get back, which is why `recall` can search
+titles and descriptions. Searching bodies, deep audit, write tooling, and ranking
+sophistication are deliberately *not* in this version — each is a real later
+idea, none is this version's job.
 
 The wager is simple: a structured index built *over* an existing pile of files —
 without replacing the pile — makes the whole thing measurably work better. The
