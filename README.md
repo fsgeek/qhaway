@@ -123,8 +123,11 @@ source of truth.
 
 Two verbs are exposed to the model:
 
-- `recall(type?, role?, status?)` — pure read; returns the budgeted projection
-  (omit args for the working set).
+- `recall(type?, role?, status?, limit?)` — pure read; returns the budgeted
+  projection (omit args for the working set). Its first line gives the slice's
+  size: `72 matching memories; all shown.`, or the full size in bytes and how
+  many are shown. `limit` caps the entries; `limit=0` returns only the counts,
+  so a caller can see what a slice would cost before loading it.
 - `remember(type, title, body, description?, links?, supersedes?)` — writes a
   topic file then reconciles. Pass `supersedes` naming the memory this one
   retires, and recall demotes the loser. Files stay truth; the DB is a derived,

@@ -72,7 +72,7 @@ def _exclusive_write(root: Path, stem: str, text: str) -> str:
     )
 
 
-def recall(type=None, role=None, status="live", memory_dir=".", reground=None) -> str:
+def recall(type=None, role=None, status="live", memory_dir=".", reground=None, limit=None) -> str:
     """Project the memory slice; if `reground` is injected, re-ground any claim.
 
     `reground` is an optional callable taking a claim dict and returning a live
@@ -87,7 +87,7 @@ def recall(type=None, role=None, status="live", memory_dir=".", reground=None) -
     try:
         result = project.project_slice_with_overflow(
             conn, budget=project.DEFAULT_BUDGET, content_type=type, role=role, status=status,
-            hint="tool",
+            hint="tool", limit=limit,
         )
         claims = _claim_nodes(conn, type, role, status) if reground is not None else []
     finally:
@@ -159,11 +159,12 @@ def build_server(memory_dir: str, inline_budget=None):
     _reground = reground_mod.default_provider()
 
     @mcp.tool()
-    def recall(type=None, role=None, status="live") -> str:
+    def recall(type=None, role=None, status="live", limit: int | None = None) -> str:
         """Read your memory: a budgeted projection of the structured store, not
         the whole file. Omit args for the working set; filter by `type`
-        (user/feedback/project/reference), `role`, or `status`."""
-        return _recall_impl(type, role, status, memory_dir, reground=_reground)
+        (user/feedback/project/reference), `role`, or `status`. The first line
+        gives the slice's size; `limit` caps the entries (0 = counts only)."""
+        return _recall_impl(type, role, status, memory_dir, reground=_reground, limit=limit)
 
     @mcp.tool()
     def remember(type, title, body, description=None, links=None, supersedes=None) -> str:

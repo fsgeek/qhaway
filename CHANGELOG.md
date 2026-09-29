@@ -4,6 +4,11 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ## [Unreleased]
 
+### Added
+
+- Every projection (the session-start index, `recall()`, `qhaway index`) opens with one line giving the slice's size: `72 matching memories; all shown.`, or `72 matching memories, 24,150 bytes in full; showing 70.` A complete index now says it is complete, instead of being recognizable only by a missing footer.
+- `recall(limit=N)` caps the entries returned, and the footer still declares the rest. `recall(limit=0)` returns only the counts: on a 72-memory store, 283 bytes instead of about 23KB.
+
 ### Changed
 
 - PyPI now classifies qhaway as Beta (`Development Status :: 4 - Beta`), not Pre-Alpha, and links to the repository, this changelog and the issue tracker.

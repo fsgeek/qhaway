@@ -23,12 +23,16 @@ def project_slice(
     role: str | None = None,
     status: str = "live",
     hint: str = "cli",
+    limit: int | None = None,
 ) -> str:
     """Return a deterministic, budgeted Markdown projection.
 
     `hint` picks how the omissions footer says "see the rest": "cli" names the
     shell command (the CLI, the exit index); "tool" names recall() for surfaces a
     model reads while the server is running (the live index, recall's output).
+    `limit` caps the entries shown; limit=0 is a count-only survey. The first line
+    always states the slice's size, so a reader knows what it holds before
+    reading on (#20).
     """
 
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
@@ -54,12 +58,21 @@ def project_slice(
     ]
 
     ordered = sorted(filtered, key=cmp_to_key(_compare_rows))
+    full_bytes = _byte_len(_render_entries(ordered))
+
+    def header(shown: int) -> str:
+        return _header(len(filtered), shown, full_bytes)
+
     candidate_footer = _candidate_footer(filtered, hidden_superseded, hint)
-    fill_budget = max(0, budget - _byte_len(candidate_footer))
+    # The partial form with shown == total is the longest the header can be.
+    reserve = _byte_len(_join_lines([_partial_header(len(filtered), len(filtered), full_bytes)]))
+    fill_budget = max(0, budget - _byte_len(candidate_footer) - reserve)
 
     included: list[dict[str, Any]] = []
     current = ""
     for row in ordered:
+        if limit is not None and len(included) >= limit:
+            break
         proposed = _render_entries([*included, row])
         if _byte_len(proposed) <= fill_budget:
             included.append(row)
@@ -67,7 +80,7 @@ def project_slice(
 
     omitted = [row for row in filtered if row not in included]
     footer = _actual_footer(omitted, hidden_superseded, hint)
-    output = _join_lines([current, footer])
+    output = _join_lines([header(len(included)), current, footer])
     if _byte_len(output) <= budget:
         return output
 
@@ -76,12 +89,32 @@ def project_slice(
     while included and _byte_len(output) > budget:
         included.pop()
         omitted = [row for row in filtered if row not in included]
-        output = _join_lines([_render_entries(included), _actual_footer(omitted, hidden_superseded, hint)])
+        output = _join_lines([
+            header(len(included)),
+            _render_entries(included),
+            _actual_footer(omitted, hidden_superseded, hint),
+        ])
 
     if _byte_len(output) <= budget:
         return output
 
-    return _fit_footer_only(_actual_footer(filtered, hidden_superseded, hint), budget)
+    return _fit_footer_only(_join_lines([header(0), _actual_footer(filtered, hidden_superseded, hint)]), budget)
+
+
+def _header(total: int, shown: int, full_bytes: int) -> str:
+    if total == 0:
+        return "No matching memories."
+    if shown == total:
+        return f"{total} matching {_memories(total)}; all shown."
+    return _partial_header(total, shown, full_bytes)
+
+
+def _partial_header(total: int, shown: int, full_bytes: int) -> str:
+    return f"{total} matching {_memories(total)}, {full_bytes:,} bytes in full; showing {shown}."
+
+
+def _memories(count: int) -> str:
+    return "memory" if count == 1 else "memories"
 
 
 def _superseded_slugs(db_conn: Any) -> set[str]:
@@ -312,9 +345,10 @@ def project_slice_with_overflow(
     role: str | None = None,
     status: str = "live",
     hint: str = "cli",
+    limit: int | None = None,
 ) -> ProjectionResult:
     """Render the slice AND return structured overflow counts (C-1/F-7)."""
-    markdown = project_slice(db_conn, budget, content_type, role, status, hint)
+    markdown = project_slice(db_conn, budget, content_type, role, status, hint, limit)
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
     superseded_slugs = _superseded_slugs(db_conn)
     filtered = [
