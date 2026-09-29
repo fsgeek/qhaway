@@ -48,6 +48,15 @@ jobs:
           # Never build a published artifact from a poisonable cache.
           enable-cache: false
 
+      - name: Tag matches the version, and the changelog has its entry
+        # v0.5.3 was once pushed onto the previous release's commit; this fails
+        # that before anything is built.
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != pyproject version $version"; exit 1; }
+          grep -q "^## \[$version\]" CHANGELOG.md || { echo "CHANGELOG.md has no entry for $version"; exit 1; }
+
       - name: Build
         run: uv build
 

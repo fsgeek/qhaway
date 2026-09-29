@@ -63,6 +63,18 @@ zero findings. Two rules keep it honest:
   when the answer is "it isn't, because…". Vulnerabilities go through private
   reporting (see [`SECURITY.md`](SECURITY.md)), not public issues.
 
+## Releasing
+
+For maintainers:
+
+1. In one PR, bump `version` in `pyproject.toml` and add its entry to
+   [`CHANGELOG.md`](CHANGELOG.md), written for someone installing qhaway.
+2. After it merges, tag the merge commit on `main`: `git tag -s vX.Y.Z` and
+   push the tag. The release workflow refuses a tag that doesn't match
+   `pyproject.toml` or has no changelog entry, then publishes to TestPyPI.
+3. Install from TestPyPI and check the change, then publish those same files
+   to PyPI and create the GitHub release from the changelog entry.
+
 ## Reporting a bug
 
 Open an issue with the smallest reproduction you can manage. If it's a
