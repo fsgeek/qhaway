@@ -2,13 +2,13 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-29
 
 ### Added
 
 - Every projection (the session-start index, `recall()`, `qhaway index`) opens with one line giving the slice's size: `72 matching memories; all shown.`, or `72 matching memories, 24,150 bytes in full; showing 70.` A complete index now says it is complete, instead of being recognizable only by a missing footer.
 - `recall(query="...")` keeps memories whose title, description or filename contains every term, case-insensitively. Bodies are not searched. When a slice overflows, its footer mentions `query`; a slice that fits does not.
-- `recall(limit=N)` caps the entries returned, and the footer still declares the rest. `recall(limit=0)` returns only the counts: on a 72-memory store, 283 bytes instead of about 23KB.
+- `recall(limit=N)` caps the entries returned, and the footer still declares the rest. `recall(limit=0)` returns only the counts: on a 72-memory store, 340 bytes instead of about 23KB.
 
 ### Changed
 
@@ -179,6 +179,7 @@ Initial release. Requires Python 3.14 or later.
 - `qhaway serve` runs an MCP server with two tools: `recall` (read the budgeted projection) and `remember` (write a topic file, then reconcile). In this mode `MEMORY.md` becomes a read-only redirect.
 - Other commands: `reconcile`, `check` (broken links, orphaned backups, overflow) and `exit`.
 
+[0.6.0]: https://github.com/fsgeek/qhaway/releases/tag/v0.6.0
 [0.5.3]: https://github.com/fsgeek/qhaway/releases/tag/v0.5.3
 [0.5.2]: https://github.com/fsgeek/qhaway/releases/tag/v0.5.2
 [0.5.1]: https://github.com/fsgeek/qhaway/releases/tag/v0.5.1
