@@ -45,3 +45,20 @@ def test_session_end_writes_signed_index_when_active(tmp_path):
     assert _run(["session-end"], env) == 0
     text = (derived / "MEMORY.md").read_text()
     assert "qhaway:v1:" in text  # signed index
+
+
+def test_session_start_hints_name_recall_not_the_cli(tmp_path, capsys):
+    # Session-start stdout is read by a model holding the recall tool; the shell
+    # hint (which lacks --dir) is not an instruction it can follow.
+    proj = tmp_path / "proj"; proj.mkdir()
+    derived = paths.memory_dir_for(str(proj), home=tmp_path)
+    derived.mkdir(parents=True)
+    for i in range(200):
+        (derived / f"t{i:03d}.md").write_text(
+            f"---\nname: T{i:03d}\ndescription: {'d' * 150}\nmetadata:\n  type: project\n---\nbody\n"
+        )
+    env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
+    assert _run(["session-start"], env) == 0
+    out = capsys.readouterr().out
+    assert 'recall(type="project")' in out
+    assert "qhaway index" not in out

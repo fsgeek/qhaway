@@ -131,7 +131,7 @@ def _session(which: str) -> int:
         reconcile(directory)
         conn = model.get_connection(directory)
         try:
-            sys.stdout.write(project.project_slice(conn, budget=project.DEFAULT_BUDGET))
+            sys.stdout.write(project.project_slice(conn, budget=project.DEFAULT_BUDGET, hint="tool"))
         finally:
             conn.close()
         return 0
