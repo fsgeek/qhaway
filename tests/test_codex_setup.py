@@ -36,7 +36,7 @@ def test_default_store_is_independent_and_uninstall_preserves_files(environment)
     args = server['args']
     store = Path(args[args.index('--dir') + 1])
     assert store.is_absolute() and store.is_relative_to(home / '.qhaway')
-    assert '--inline-index' in args
+    assert '--inline-index' not in args
     assert not (home / '.claude').exists()
     assert not (home / '.codex').exists()
     assert install(project) == 0
@@ -44,7 +44,7 @@ def test_default_store_is_independent_and_uninstall_preserves_files(environment)
     store.mkdir(parents=True)
     (store / 'lesson.md').write_text('keep this')
     assert uninstall(project) == 0
-    assert 'qhaway' not in tomllib.loads(config.read_text()).get('mcp_servers', {})
+    assert not (project / '.codex').exists()
     assert (store / 'lesson.md').read_text() == 'keep this'
     assert uninstall(project) == 0
 
@@ -62,7 +62,11 @@ def test_preserves_unrelated_bytes_and_custom_store(environment, original):
     assert config.read_bytes().startswith(original)
     assert install(project, '--dir', str(store)) == 0
     assert uninstall(project) == 0
-    assert config.read_bytes() == original
+    if original:
+        assert config.read_bytes() == original
+    else:
+        assert not config.exists()
+        assert not config.parent.exists()
 
 
 @pytest.mark.parametrize('original', [b'not valid TOML !', b'[mcp_servers.qhaway]\ncommand="mine"\n'])
@@ -265,4 +269,32 @@ def test_default_store_alias_cannot_enter_native_memory(environment):
         pytest.skip('symlinks unavailable to this Windows account')
     assert install(project) == 1
     assert not (project / '.codex/config.toml').exists()
+    assert list(native.iterdir()) == []
+
+
+def test_uninstall_preserves_other_codex_files_and_keeps_lock_outside_project(environment):
+    home, project = environment
+    config_dir = project / '.codex'
+    config_dir.mkdir()
+    (config_dir / 'notes.txt').write_text('keep')
+    assert install(project) == 0
+    assert uninstall(project) == 0
+    assert sorted(p.name for p in config_dir.iterdir()) == ['notes.txt']
+    assert (config_dir / 'notes.txt').read_text() == 'keep'
+    locks = list((home / '.qhaway/locks').glob('*.lock'))
+    assert len(locks) == 1
+    assert install(project) == 0
+    assert uninstall(project) == 0
+    assert list((home / '.qhaway/locks').glob('*.lock')) == locks
+
+
+def test_external_lock_cannot_alias_native_memory_with_custom_store(environment):
+    home, project = environment
+    native = home / '.codex/memories'
+    native.mkdir(parents=True)
+    try:
+        (home / '.qhaway').symlink_to(native, target_is_directory=True)
+    except OSError:
+        pytest.skip('symlinks unavailable to this Windows account')
+    assert install(project, '--dir', str(home / 'separate')) == 1
     assert list(native.iterdir()) == []

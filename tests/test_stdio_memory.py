@@ -2,19 +2,32 @@
 
 import asyncio
 import os
+from pathlib import Path
+import tomllib
 import sys
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from qhaway import cli, server
 
 
-def test_stdio_curated_memory_round_trip(tmp_path):
+def test_stdio_curated_memory_round_trip(tmp_path, monkeypatch):
     # Regression targets: losing explicit --dir precedence, dropping MCP
     # bindings, loading bodies into the survey, or losing supersession on restart.
     root = tmp_path / "curated"
+    root.mkdir()
+    monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path / 'home'))
+    # Claude's normal server establishes the redirect. A managed Codex server
+    # must preserve that same form on startup, writes, and restart.
+    server.initialize_server(str(root))
+    redirect = (root / 'MEMORY.md').read_bytes()
+    assert cli.main(['init', '--host', 'codex', '--project', str(tmp_path),
+                     '--dir', str(root)]) == 0
+    config = tomllib.loads((tmp_path / '.codex/config.toml').read_text())
+    server_args = config['mcp_servers']['qhaway']['args']
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "qhaway.cli", "serve", "--dir", str(root), "--inline-index"],
+        args=["-m", "qhaway.cli", *server_args[3:]],
         cwd=str(tmp_path),
         env={**os.environ, "CLAUDE_PROJECT_DIR": str(tmp_path / "decoy")},
     )
@@ -62,7 +75,7 @@ def test_stdio_curated_memory_round_trip(tmp_path):
                 current = await call("recall")
                 assert "Revised decision" in current and "Other observation" in current
                 assert "Old decision" not in current and "superseded" in current
-                assert "Revised decision" in (root / "MEMORY.md").read_text(encoding="utf-8")
+                assert (root / "MEMORY.md").read_bytes() == redirect
 
     async def run():
         async with asyncio.timeout(30):
