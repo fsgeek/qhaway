@@ -113,12 +113,17 @@ def configure(project: Path, store: Path | None = None, *, remove: bool = False)
     if not project.is_dir():
         raise ValueError(f'Project directory does not exist: {project}')
     path = project / '.codex' / 'config.toml'
-    selected = (store.expanduser().resolve() if store is not None else default_store(project))
+    codex_homes = [Path.home() / '.codex']
+    if os.environ.get('CODEX_HOME'):
+        codex_homes.append(Path(os.environ['CODEX_HOME']).expanduser())
+    if path.parent.is_symlink() or path.parent.is_junction():
+        raise ValueError('Project .codex directory is an alias; left untouched')
+    if any(path.resolve() == (home / 'config.toml').resolve() for home in codex_homes):
+        raise ValueError('Project selection targets global Codex configuration; left untouched')
+    selected = (store.expanduser() if store is not None else default_store(project)).resolve()
     if not remove and selected.exists() and not selected.is_dir():
         raise ValueError(f'Memory directory is not a directory: {selected}')
-    native_roots = [Path.home() / '.codex' / 'memories']
-    if os.environ.get('CODEX_HOME'):
-        native_roots.append(Path(os.environ['CODEX_HOME']) / 'memories')
+    native_roots = [home / 'memories' for home in codex_homes]
     if not remove and (selected == project or selected == path.parent or
                        any(selected.is_relative_to(root.resolve()) for root in native_roots)):
         raise ValueError('Choose a dedicated curated store, not the project root or native Codex memory')
