@@ -41,6 +41,7 @@ def project_slice(
 
     terms = _query_terms(query)
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
+    _attach_retractions(db_conn, rows)
     superseded_slugs = _superseded_slugs(db_conn)
     filtered = [
         row
@@ -151,6 +152,28 @@ def _superseded_slugs(db_conn: Any) -> set[str]:
     return {slugify(row[0]) for row in cursor.fetchall()}
 
 
+def _attach_retractions(db_conn: Any, rows: list[dict[str, Any]]) -> None:
+    """Give each row the retractions pointing at it (RETRACTS edges, #27).
+
+    A retracted memory stays in the projection; its line carries a marker to
+    each retraction. Tolerates a db without an `edges` table, as above.
+    """
+    try:
+        edges = db_conn.execute(
+            "SELECT src_file, dst_slug FROM edges WHERE kind = 'RETRACTS' ORDER BY src_file"
+        ).fetchall()
+    except Exception:
+        edges = []
+    by_file = {row["file"]: row for row in rows}
+    by_slug: dict[str, list[dict[str, Any]]] = {}
+    for src_file, dst_slug in edges:
+        source = by_file.get(src_file)
+        if source is not None:
+            by_slug.setdefault(slugify(dst_slug), []).append(source)
+    for row in rows:
+        row["retractions"] = by_slug.get(slugify(str(row["file"]).removesuffix(".md")), [])
+
+
 def _is_link_superseded(row: dict[str, Any], superseded_slugs: set[str], status: str) -> bool:
     """A live node is link-superseded if something points a SUPERSEDES edge at it.
 
@@ -175,6 +198,7 @@ def _normalize_row(values: dict[str, Any]) -> dict[str, Any]:
         "date_hint": values.get("date_hint"),
         "body": values.get("body") or "",
         "mtime_ns": values.get("mtime_ns") or 0,
+        "retracted_claim": values.get("retracted_claim"),
     }
 
 
@@ -211,7 +235,13 @@ def _compare_desc_string(left: Any, right: Any) -> int:
 def _entry_line(row: dict[str, Any]) -> str:
     title = _title(row)
     hook = _hook(row)
-    return f"- [{title}]({row['file']}) — {hook}"
+    markers = ""
+    for retraction in row.get("retractions", []):
+        claim = retraction.get("retracted_claim")
+        if claim and claim in hook:
+            hook = hook.replace(claim, f"~~{claim}~~", 1)
+        markers += f" [retracted: {_title(retraction)}]({retraction['file']})"
+    return f"- [{title}]({row['file']}) — {hook}{markers}"
 
 
 def _render_entries(rows: list[dict[str, Any]]) -> str:
@@ -382,7 +412,9 @@ def project_slice_with_overflow(
         and (role is None or row["role"] == role)
         and _matches(row, terms)
     ]
-    omitted = [row for row in filtered if f"]({row['file']})" not in markdown]
+    # An entry line is "](file) — hook"; a retraction marker also links a file,
+    # but never followed by " — ", so it cannot pass for a shown entry.
+    omitted = [row for row in filtered if f"]({row['file']}) — " not in markdown]
     omitted_counts: dict = {}
     for row in omitted:
         omitted_counts[row["content_type"]] = omitted_counts.get(row["content_type"], 0) + 1
