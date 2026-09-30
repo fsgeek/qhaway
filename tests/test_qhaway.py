@@ -335,7 +335,8 @@ def test_unit_project_sort_tiebreak():
             body TEXT,
             mtime_ns INTEGER,
             size INTEGER,
-            claim TEXT
+            claim TEXT,
+            retracted_claim TEXT
         )
         """
     )
@@ -346,7 +347,7 @@ def test_unit_project_sort_tiebreak():
         """
         INSERT INTO nodes VALUES (
             'file_b.md', 'Node B', 'project', 'Desc', 'proj', 'live',
-            'session_1', '2026-06-20', 'Body', 1700000000000000000, 10, NULL
+            'session_1', '2026-06-20', 'Body', 1700000000000000000, 10, NULL, NULL
         )
         """
     )
@@ -354,7 +355,7 @@ def test_unit_project_sort_tiebreak():
         """
         INSERT INTO nodes VALUES (
             'file_a.md', 'Node A', 'project', 'Desc', 'proj', 'live',
-            'session_1', '2026-06-20', 'Body', 1700000000000000000, 10, NULL
+            'session_1', '2026-06-20', 'Body', 1700000000000000000, 10, NULL, NULL
         )
         """
     )

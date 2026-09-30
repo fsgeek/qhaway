@@ -96,8 +96,10 @@ def test_recall_tool_remember_accepts_retracts(tmp_path):
 def test_a_marker_link_does_not_count_its_target_as_shown(tmp_path):
     # Overflow accounting finds shown memories by their links; a marker links
     # to the retraction, which must still count as omitted when its own line is.
+    # The retraction sorts last, so limit=1 shows the target (with its marker)
+    # and omits the retraction's own line.
     _write(tmp_path, "users-claim", "the community uses qhaway extensively")
-    _write(tmp_path, "no-outside-users", "x" * 100, extra="retracts: users-claim\n")
+    _write(tmp_path, "zz-no-outside-users", "x" * 100, extra="retracts: users-claim\n")
     reconcile.reconcile(str(tmp_path))
     conn = model.get_connection(str(tmp_path))
     try:
@@ -106,5 +108,5 @@ def test_a_marker_link_does_not_count_its_target_as_shown(tmp_path):
         conn.close()
 
     shown = [l for l in result.markdown.splitlines() if l.startswith("- [")]
-    assert len(shown) == 1
+    assert len(shown) == 1 and "(zz-no-outside-users.md)" in shown[0]  # only as a marker
     assert sum(result.overflow.omitted_counts.values()) == 1
