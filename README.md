@@ -83,6 +83,11 @@ only commands it wrote itself in their original form, and leaves a customized
 entry alone with a notice. The `--isolated` in the command above matters: plain
 `uvx qhaway` would run the installed tool's old `init`.
 
+**Offline:** uv checks the package index when its cached copy is more than about
+ten minutes old. With no network, the hooks fail after a timeout, and the session
+starts without memory. Set `UV_OFFLINE=1` (or `offline = true` in `uv.toml`)
+while offline ([#33](https://github.com/fsgeek/qhaway/issues/33)).
+
 ### As a Claude Code plugin
 
 If you'd rather load qhaway per-session from a checkout instead of installing it
