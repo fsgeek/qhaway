@@ -112,11 +112,18 @@ The protocol regression is reproducible with:
 uv run --group dev pytest -q tests/test_stdio_memory.py
 ```
 
-These checks establish protocol behavior and local configuration discovery.
-They do not establish improved task outcomes, model adherence to the guidance,
-concurrent cross-client write behavior, or native tool exposure in the already
-running Codex session. That session's tool list could not be refreshed by this
-pilot. A new session's actual use remains the next observation.
+After the user restarted the framework on 2026-09-29, the Codex instance
+successfully called the exposed qhaway tools: count-only recall, a two-result
+query with four declared matches, and remember to record the pilot findings.
+It opened a selected topic through filesystem access and then retrieved the
+new pilot memory with a targeted recall. Native tool exposure and a read/write
+round trip are therefore observed in one local Codex session. The new record
+adds one topic beyond the 88-file preservation check above.
+
+These checks do not establish improved task outcomes, reliable adherence across
+instances, or concurrent cross-client write behavior. The selected July memory
+also contained an obsolete assertion that qhaway had no text query; the pilot
+record qualifies that assertion without superseding unrelated historical claims.
 
 Known 0.6.0 limitations: `recall` uses its fixed default projection budget rather
 than the inline-index budget; server instructions call recall "the latest word"

@@ -75,3 +75,13 @@ or modify global MCP entries.
 - Integration decision: preserve experiment/codex-memory-pilot and its worktree;
   no merge or push. The original checkout's local MCP configuration is active
   for discovery by a fresh Codex session. No product-code expansion was needed.
+
+## Post-restart observation, 2026-09-29
+
+The user restarted the framework. Native qhaway count-only recall, bounded
+query, remember, and targeted retrieval of the newly written pilot record
+succeeded. A selected full topic was read through filesystem access. This
+resolves the native tool-exposure limitation for this session; it does not
+establish cross-instance adherence, concurrent writes, or improved outcomes.
+The pilot record preserves circumstances and qualifies an obsolete July claim
+about absence of query support without superseding the entire older memory.
