@@ -199,3 +199,66 @@ def test_cli_update_message_does_not_claim_an_unchanged_half(tmp_path, which, mo
 
     out = capsys.readouterr().out
     assert "updated" in out and "MCP server" not in out
+
+
+# --- Blocks that lost the marker --------------------------------------------
+# Found on a real machine (2026-09-30): the "//" marker was gone from qhaway's
+# hook blocks (something rewrote settings.json and dropped unknown keys), so
+# init appended a second pair and uninstall would have found nothing.
+
+
+def _unmarked(uvx=UVX, isolated=False):
+    flag = " --isolated" if isolated else ""
+    return {"hooks": {
+        "SessionStart": [{"hooks": [{"type": "command", "command": f"{uvx}{flag} qhaway session-start"}]}],
+        "SessionEnd": [
+            {"hooks": [{"type": "command", "command": f"{uvx}{flag} qhaway session-end"}]},
+            {"hooks": [{"type": "command", "command": "/opt/khipumaq ingest claude-session", "timeout": 30}]},
+        ],
+    }}
+
+
+def _commands(s):
+    d = _read(s)
+    return [h["command"] for ev in ("SessionStart", "SessionEnd")
+            for b in d.get("hooks", {}).get(ev, []) for h in b["hooks"]]
+
+
+def test_unmarked_old_hooks_are_upgraded_not_duplicated(tmp_path, which):
+    s = tmp_path / "settings.json"
+    s.write_text(json.dumps(_unmarked()))
+
+    assert setup.install(s) == "updated"
+
+    assert _commands(s) == [
+        f"{UVX} --isolated qhaway session-start",
+        f"{UVX} --isolated qhaway session-end",
+        "/opt/khipumaq ingest claude-session",
+    ]
+
+
+def test_unmarked_current_hooks_count_as_installed(tmp_path, which):
+    s = tmp_path / "settings.json"
+    s.write_text(json.dumps(_unmarked(isolated=True)))
+    before = s.read_text()
+
+    assert setup.install(s) == "already"
+    assert s.read_text() == before
+
+
+def test_uninstall_removes_unmarked_qhaway_hooks_and_keeps_others(tmp_path, which):
+    s = tmp_path / "settings.json"
+    s.write_text(json.dumps(_unmarked()))
+
+    assert setup.uninstall(s) == "removed"
+
+    assert _commands(s) == ["/opt/khipumaq ingest claude-session"]
+
+
+def test_uninstall_leaves_a_customized_command_it_did_not_write(tmp_path, which):
+    s = tmp_path / "settings.json"
+    s.write_text(json.dumps({"hooks": {"SessionStart": [
+        {"hooks": [{"type": "command", "command": "python -m qhaway session-start"}]}]}}))
+
+    assert setup.uninstall(s) == "absent"
+    assert _commands(s) == ["python -m qhaway session-start"]
