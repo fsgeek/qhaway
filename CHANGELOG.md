@@ -14,7 +14,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
   is removed on uninstall; locks live outside the project.
 - CI checks Codex configuration and real MCP read/write using the installed
   wheel on Linux, macOS, and Windows, without model API credentials.
-- Retractions ([#27](https://github.com/fsgeek/qhaway/issues/27)). A memory with `retracts:` (a slug, `[[wikilink]]` or list, like `supersedes:`) marks an earlier memory's claim as wrong without hiding it. The earlier memory keeps its line in every projection, with `[retracted](<retraction file>)` appended, and an optional `retracted_claim:` quoted exactly is struck through in its title and description. `remember()` accepts `retracts` and `retracted_claim`. Use `supersedes` when understanding moved on; use `retracts` when a claim was wrong and later readers need to see that it was believed.
+- Retractions ([#27](https://github.com/fsgeek/qhaway/issues/27)). A memory with `retracts:` (a slug, `[[wikilink]]` or list, like `supersedes:`) marks an earlier memory's claim as wrong without hiding it. The earlier memory keeps its line in every projection, with `[retracted](<retraction file>)` appended, and an optional `retracted_claim:` quoted exactly is struck through in its title and description. `remember()` accepts `retracts` and `retracted_claim`, and the MCP instructions tell instances when to retract rather than supersede. Use `supersedes` when understanding moved on; use `retracts` when a claim was wrong and later readers need to see that it was believed.
 
 ### Changed
 
