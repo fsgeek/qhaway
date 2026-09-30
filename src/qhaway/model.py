@@ -82,6 +82,9 @@ def get_connection(memory_dir: str) -> sqlite3.Connection:
     if not root.is_dir():
         raise FileNotFoundError(f"memory directory is not readable: {memory_dir}")
 
+    if _newer_on_disk(db_path(root)):
+        return _from_files_in_memory(root)
+
     if _drifted_on_disk(db_path(root)):
         rebuild_database(str(root))
         return _open_wal(db_path(root))
@@ -133,6 +136,42 @@ def _open_wal(path: Path) -> sqlite3.Connection:
     if preexisting is None:
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.commit()
+    return conn
+
+
+_warned_newer: set[Path] = set()
+
+
+def _newer_on_disk(path: Path) -> bool:
+    """A db stamped by a newer qhaway than this one (#37)."""
+    if not path.exists():
+        return False
+    conn = sqlite3.connect(str(path))
+    try:
+        return conn.execute("PRAGMA user_version").fetchone()[0] > SCHEMA_VERSION
+    finally:
+        conn.close()
+
+
+def _from_files_in_memory(root: Path) -> sqlite3.Connection:
+    """Serve this process from the topic files without touching the newer index.
+
+    The index is shared with whichever qhaway wrote it, possibly a process this
+    one can't see; deleting it as "drift" made mixed versions destroy each
+    other's index in turn. Files stay truth, so an in-memory index is exact.
+    """
+    if root not in _warned_newer:
+        _warned_newer.add(root)
+        sys.stderr.write(
+            f"qhaway: {db_path(root)} was written by a newer qhaway; left untouched and "
+            "reading the topic files directly. Upgrade qhaway to use the index.\n"
+        )
+    conn = sqlite3.connect(":memory:")
+    conn.execute(_CREATE_NODES)
+    conn.execute(_CREATE_EDGES)
+    conn.execute(_CREATE_EDGE_INDEX)
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    _full_load(conn, root)
     return conn
 
 

@@ -2,6 +2,12 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [Unreleased]
+
+### Fixed
+
+- An older qhaway no longer deletes the index a newer qhaway wrote ([#37](https://github.com/fsgeek/qhaway/issues/37)). A schema mismatch used to mean "delete and rebuild" in both directions, so two versions sharing a store took turns destroying each other's index. Now a newer-than-known index is left untouched: the older version reads the topic files into an in-memory index for that call and prints a one-time notice suggesting an upgrade. An older index is still rebuilt. This protects indexes written by releases after this one.
+
 ## [0.7.2] - 2026-09-30
 
 ### Fixed
