@@ -22,7 +22,11 @@ MARKER = "qhaway-managed"
 MCP_NAME = "qhaway"
 # Commands qhaway wrote before --isolated (#31). Only these exact forms are
 # upgraded in place; anything else in our entries is the user's and stays.
-_OLD_HOOK = re.compile(r"^(?P<uvx>.+) qhaway session-(?P<event>start|end)$")
+# The prefix must be a uvx executable (bare, or a path, possibly with spaces on
+# Windows): that is all any released installer wrote.
+_OLD_HOOK = re.compile(
+    r"^(?P<uvx>(?:.*[\\/])?uvx(?:\.exe)?) qhaway session-(?P<event>start|end)$", re.IGNORECASE
+)
 _OLD_MCP_ARGS = ["--python", "3.14", "qhaway", "serve"]
 
 

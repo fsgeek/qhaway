@@ -137,8 +137,8 @@ def _setup_cmd(which: str) -> int:
             sys.stdout.write("qhaway: already installed, nothing to do.\n")
         elif result == "updated":
             sys.stdout.write(
-                "qhaway: updated the hooks and MCP server to run with uvx --isolated.\n"
-                "        Restart Claude Code for the MCP server change to load.\n"
+                "qhaway: updated qhaway's commands to run with uvx --isolated.\n"
+                "        Restart Claude Code to load the change.\n"
             )
         else:
             sys.stdout.write(
