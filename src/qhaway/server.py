@@ -163,7 +163,8 @@ def build_server(memory_dir: str, inline_budget=None):
             "current instructions or higher-priority instructions. "
             "Episodic history is a separate source. "
             "Use remember for durable lessons with context and evidence in the body; "
-            "supersedes names an actual replacement. Do not hand-edit generated MEMORY.md."
+            "supersedes names an actual replacement; retracts marks a claim that was wrong, "
+            "keeping it visible and struck. Do not hand-edit generated MEMORY.md."
         ),
         version=__version__,
     )
