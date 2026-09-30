@@ -12,7 +12,8 @@ This avoids dependence on Claude paths, hooks, or environment variables.
 The server advertises the configured store root and explains bounded retrieval,
 full-topic access, and revisable judgments. Do not modify AGENTS files or native
 Codex memory. Initialization only wires configuration; serving provisions the
-store. Use inline-index mode, retaining the existing shared-store caveat.
+store. Use default redirect mode so a shared Claude store does not acquire an
+inline index in addition to its hook projection.
 
 Use an appended, clearly delimited, checksum-protected TOML block. Parse both
 original and proposed documents with stdlib tomllib. Preserve all unrelated
@@ -20,7 +21,9 @@ bytes. Refuse malformed config, unmanaged qhaway entries, modified owned blocks,
 or a changed requested store. Uninstall removes only an intact owned block and
 preserves memories. An existing manual pilot entry needs explicit removal before
 managed installation; do not silently adopt ownership. Atomic writes and a
-per-project install lock serialize qhaway installers. Do not claim exclusion of
+per-project install lock under ~/.qhaway/locks serialize qhaway installers.
+Delete a zero-byte config after removal and remove its parent only when empty;
+pre-existing empty configs are equivalent to missing ones. Do not claim exclusion of
 uncooperative external config editors.
 
 Alternatives: global Codex registration risks the wrong store in other projects;

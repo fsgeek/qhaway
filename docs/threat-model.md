@@ -116,7 +116,9 @@ TOML are parsed before replacement; unrelated bytes are preserved. Atomic
 replacement preserves an existing file's mode; new configs use mode 0600 where
 supported. Symlinked config files and aliased `.codex` directories are refused. Resolved
 destinations matching default/custom global Codex configuration are refused,
-and both default and explicit stores are resolved before native-memory checks. A per-project OS file lock
+and both default and explicit stores are resolved before native-memory checks.
+The per-project OS file lock lives in `~/.qhaway/locks`, outside the project;
+its resolved path is also checked against native memory. It
 serializes qhaway installers, but cannot serialize an external editor that does
 not use that lock. Such editors must not write simultaneously with installation.
 
@@ -124,3 +126,9 @@ No agent instruction file, Claude setting, native-memory file, credential, or
 cloud account is modified. The existing uvx package-launch supply-chain boundary
 also applies here. CI operates on synthetic temporary stores and installed
 wheels without invoking models or provisioning model API keys.
+
+Managed Codex servers use the same redirect mode as Claude servers, avoiding
+duplicate resident context from an inline file plus a Claude hook projection.
+Feedback memories can convey standing user guidance; the handshake asks the
+client to check attribution and relevance and respect current instructions,
+rather than treating either all memory as authority or all memory as non-instruction.

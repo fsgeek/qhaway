@@ -10,7 +10,8 @@ All notable changes to qhaway are listed here; every version is published on [Py
   memory, independently of Claude. `--project` selects the project and `--dir`
   selects a shared or separate store; the default lives under `~/.qhaway`.
   `uninstall --host codex` removes only unchanged managed configuration and
-  leaves memories and unrelated settings intact.
+  leaves memories and unrelated settings intact. Empty generated configuration
+  is removed on uninstall; locks live outside the project.
 - CI checks Codex configuration and real MCP read/write using the installed
   wheel on Linux, macOS, and Windows, without model API credentials.
 
@@ -20,7 +21,9 @@ All notable changes to qhaway are listed here; every version is published on [Py
   dependency security audit.
 - MCP instructions now give the full-topic directory and describe bounded
   retrieval and revisable judgments, replacing the assertion that recalled
-  memory is always "the latest word."
+  memory is always "the latest word," while recognizing feedback memories as
+  standing user guidance subject to current instructions. Codex uses the same
+  redirect mode as Claude, avoiding an extra inline index in a shared store.
 
 ## [0.6.0] - 2026-09-29
 

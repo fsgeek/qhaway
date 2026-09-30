@@ -51,3 +51,19 @@ conflicts and line endings, platform compatibility, no model API credentials.
   path against the server's resolved path. The product's path normalization was
   correct; the smoke assertion now uses Path.resolve(), like the stdio test.
   Initial CI: six jobs passed, Windows wheel failed at that assertion.
+
+## Claude review, 2026-09-30
+
+- Removed inline-index from Codex configuration. The stdio test now consumes
+  managed launch arguments and verifies Claude's redirect survives Codex
+  startup, writes, and restart; it failed with the previous payload.
+- Uninstall removes zero-byte config and empty .codex directories, preserving
+  other files. Locks persist under ~/.qhaway/locks, outside the project.
+  Directory creation/removal is inside that lock to avoid races.
+- A previously empty config is treated as absent, as proposed in the review.
+  External-lock aliases into native memory are refused even with a custom store.
+- Handshake recognizes feedback as standing user guidance while asking for
+  attribution/evidence checks and respecting current instruction priority.
+- Five regression cases failed before these changes; the targeted suite now
+  passes 29 tests. Full suite: 215 passed, 3 skipped. Installed-wheel smoke
+  and Bandit pass locally.
