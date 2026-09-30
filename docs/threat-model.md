@@ -52,6 +52,21 @@ file placement — `slugify` strips every character outside `[\w-]`, so
 path-shaped titles (`../../x`) cannot escape the store. Protocol errors go to
 stderr, never stdout (a corrupted stdout frame is a host-side failure mode).
 
+### Local Codex pilot (2026-09-29)
+
+The manual setup in [codex-memory.md](codex-memory.md) gives another local host
+access to the existing stdio tools. It adds no network listener or installer
+code. The explicit `--dir` selects the complete curated store available to that
+host; sharing it with Claude also shares the ability to add and supersede
+memories. The host's tool permissions govern calls, and the spawned server's
+filesystem permissions govern its writes. A client-side shell sandbox is not
+by itself a read-only policy for the MCP server.
+
+Topic bodies are opened by the client's filesystem tools using the configured
+store root. Returned content remains untrusted model context, including claims
+of authority. Removing the MCP configuration stops future connections after
+restart; it neither deletes memories nor revokes content already retrieved.
+
 ### 4. The installer — highest privilege operation
 `init`/`uninstall` edit `~/.claude/settings.json` (hooks) and `~/.claude.json`
 (MCP servers): the hook line it installs runs at every session start, so this
@@ -86,3 +101,34 @@ layer in core; the provider is discovered at serve time from an operator-owned
 qhaway does not authenticate callers (the host does), does not encrypt at rest
 (the store is the operator's plaintext by design — files-as-truth), and does
 not classify memory content. Each would add a trust story qhaway cannot keep.
+
+## Managed Codex installer (unreleased)
+
+`init --host codex` edits only the selected project's `.codex/config.toml`.
+The operator chooses whether that project receives a shared store or a separate
+one. The default under `~/.qhaway` does not use Claude discovery or native Codex
+memory. The server handshake exposes the chosen local store path to the client.
+
+Ownership is a delimited checksum-protected block. This is an accidental-edit
+and lifecycle signal, not an authentication mechanism against a malicious local
+writer. Unmanaged entries and modified blocks are refused. Original and resulting
+TOML are parsed before replacement; unrelated bytes are preserved. Atomic
+replacement preserves an existing file's mode; new configs use mode 0600 where
+supported. Symlinked config files and aliased `.codex` directories are refused. Resolved
+destinations matching default/custom global Codex configuration are refused,
+and both default and explicit stores are resolved before native-memory checks.
+The per-project OS file lock lives in `~/.qhaway/locks`, outside the project;
+its resolved path is also checked against native memory. It
+serializes qhaway installers, but cannot serialize an external editor that does
+not use that lock. Such editors must not write simultaneously with installation.
+
+No agent instruction file, Claude setting, native-memory file, credential, or
+cloud account is modified. The existing uvx package-launch supply-chain boundary
+also applies here. CI operates on synthetic temporary stores and installed
+wheels without invoking models or provisioning model API keys.
+
+Managed Codex servers use the same redirect mode as Claude servers, avoiding
+duplicate resident context from an inline file plus a Claude hook projection.
+Feedback memories can convey standing user guidance; the handshake asks the
+client to check attribution and relevance and respect current instructions,
+rather than treating either all memory as authority or all memory as non-instruction.

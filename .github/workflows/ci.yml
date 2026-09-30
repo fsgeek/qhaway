@@ -79,6 +79,9 @@ jobs:
           printf -- '---\nname: smoke\ntype: project\ndescription: wheel smoke\n---\nbody\n' > smoke-store/smoke.md
           "$BIN/qhaway" index --dir smoke-store
           grep -q "smoke" smoke-store/MEMORY.md  # the main command wrote the index
+          # Exercises the installed wheel's Codex config + real stdio server.
+          # No model invocation, API keys, or cloud account credentials.
+          "$BIN/python" scripts/smoke_codex_install.py
 
   audit:
     # Security floor, kept green: known-vuln scan of locked deps, static

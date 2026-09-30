@@ -37,8 +37,12 @@ def main(args: list[str] | None = None) -> int:
         p.add_argument("--inline-index", action="store_true")
     sub.add_parser("session-start")
     sub.add_parser("session-end")
-    sub.add_parser("init", aliases=["install"])  # install/uninstall is the pair users reach for
-    sub.add_parser("uninstall")
+    for command, aliases in (("init", ["install"]), ("uninstall", [])):
+        p = sub.add_parser(command, aliases=aliases)
+        p.add_argument("--host", choices=("claude", "codex"), default="claude")
+        p.add_argument("--project", help="Codex project directory (default: current directory)")
+        if command == "init":
+            p.add_argument("--dir", help="Codex curated-memory directory (default: ~/.qhaway/projects/...)")
 
     ns = parser.parse_args(args)
 
@@ -46,6 +50,10 @@ def main(args: list[str] | None = None) -> int:
         return _session(ns.command)
 
     if ns.command in ("init", "install", "uninstall"):
+        if ns.host == "codex":
+            return _codex_setup_cmd(ns.command, ns.project, getattr(ns, "dir", None))
+        if ns.project is not None or getattr(ns, "dir", None) is not None:
+            parser.error("--project and --dir require --host codex")
         return _setup_cmd(ns.command)
 
     directory = _resolve_dir(ns)
@@ -90,6 +98,32 @@ def main(args: list[str] | None = None) -> int:
             sys.stdout.write(project.project_slice(conn, budget=ns.budget))
         finally:
             conn.close()
+    return 0
+
+
+def _codex_setup_cmd(which: str, project_dir: str | None, memory_dir: str | None) -> int:
+    from qhaway import codex_setup
+
+    project_root = Path(project_dir) if project_dir else Path.cwd()
+    try:
+        result, store = codex_setup.configure(
+            project_root, Path(memory_dir) if memory_dir else None,
+            remove=which == "uninstall",
+        )
+    except (OSError, ValueError) as exc:
+        sys.stderr.write(f"qhaway: {exc}\n")
+        return 1
+    label = {"already": "already installed", "absent": "not installed"}.get(result, result)
+    sys.stdout.write(f"qhaway: Codex {label} for {project_root.expanduser().resolve()}.\n")
+    if store is not None:
+        sys.stdout.write(
+            f"        Curated memory: {store}\n"
+            "        Restart Codex in this trusted project; check /mcp, then recall(limit=0).\n"
+            "        Remove here with: uvx qhaway uninstall --host codex\n"
+            "        This writes machine-local .codex/config.toml; keep personal paths out of commits.\n"
+        )
+    else:
+        sys.stdout.write("        Memory files are preserved. Restart Codex to disconnect.\n")
     return 0
 
 

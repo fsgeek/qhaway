@@ -6,10 +6,25 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ### Added
 
+- `init` / `install --host codex` connects one local Codex project to curated
+  memory, independently of Claude. `--project` selects the project and `--dir`
+  selects a shared or separate store; the default lives under `~/.qhaway`.
+  `uninstall --host codex` removes only unchanged managed configuration and
+  leaves memories and unrelated settings intact. Empty generated configuration
+  is removed on uninstall; locks live outside the project.
+- CI checks Codex configuration and real MCP read/write using the installed
+  wheel on Linux, macOS, and Windows, without model API credentials.
 - Retractions ([#27](https://github.com/fsgeek/qhaway/issues/27)). A memory with `retracts:` (a slug, `[[wikilink]]` or list, like `supersedes:`) marks an earlier memory's claim as wrong without hiding it. The earlier memory keeps its line in every projection, with `[retracted](<retraction file>)` appended, and an optional `retracted_claim:` quoted exactly is struck through in its title and description. `remember()` accepts `retracts` and `retracted_claim`. Use `supersedes` when understanding moved on; use `retracts` when a claim was wrong and later readers need to see that it was believed.
 
 ### Changed
 
+- Updated the locked PyJWT dependency from 2.13.0 to 2.15.1 to clear the
+  dependency security audit.
+- MCP instructions now give the full-topic directory and describe bounded
+  retrieval and revisable judgments, replacing the assertion that recalled
+  memory is always "the latest word," while recognizing feedback memories as
+  standing user guidance subject to current instructions. Codex uses the same
+  redirect mode as Claude, avoiding an extra inline index in a shared store.
 - The index database schema is now version 3. An existing index rebuilds from the memory files automatically on first use.
 
 ## [0.6.0] - 2026-09-29

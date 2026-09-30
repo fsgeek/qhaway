@@ -161,6 +161,21 @@ exist for debugging; a normal install never invokes them by hand.)
 barrier — so the reflexive hand-edit is deflected toward the tools. qhaway's own
 writer updates it via atomic temp-file + replace.
 
+## Local Codex
+
+Codex support is available on this branch for the next release:
+
+```sh
+qhaway init --host codex       # project-local connection, independent memory store
+qhaway uninstall --host codex  # disconnect; preserve memories
+```
+
+Use `--dir /path/to/memory` to share an existing curated store, and `--project`
+to select a project other than the current directory. Restart Codex after setup.
+See [Codex setup and pilot findings](docs/codex-memory.md) for details and the
+manual configuration that already works with published 0.6.0. Native Codex
+memory and Claude are not required; plain `qhaway init` still targets Claude.
+
 ## Hookless hosts (Claude Desktop / Cowork)
 
 Claude Desktop's Cowork keeps a per-space memory store in the same shape — topic
