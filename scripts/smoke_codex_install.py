@@ -36,7 +36,9 @@ async def smoke(project):
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             initialization = await session.initialize()
-            assert str(store) in initialization.instructions
+            # Windows TEMP can contain an 8.3 alias (RUNNER~1); the installer
+            # and handshake deliberately publish the resolved absolute path.
+            assert str(store.resolve()) in initialization.instructions
             saved = await session.call_tool('remember', {
                 'type': 'project', 'title': 'Wheel integration',
                 'description': 'installed wheel check', 'body': 'Synthetic wheel evidence.',

@@ -47,3 +47,7 @@ conflicts and line endings, platform compatibility, no model API credentials.
 - Integration decision: open a draft PR to run platform CI and provide the
   planned Claude review surface. Do not merge, release, or replace the user's
   active manual pilot configuration while they are away.
+- Platform CI caught a smoke-test assertion comparing a Windows short TEMP
+  path against the server's resolved path. The product's path normalization was
+  correct; the smoke assertion now uses Path.resolve(), like the stdio test.
+  Initial CI: six jobs passed, Windows wheel failed at that assertion.
