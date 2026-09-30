@@ -19,9 +19,12 @@ _END = b'# <<< qhaway codex <<<\n'
 _HEADER = re.compile(rb'# >>> qhaway codex ([0-9a-f]{64}) >>>\n')
 
 
+def _project_key(project: Path) -> str:
+    return hashlib.sha256(os.fsencode(str(project.resolve()))).hexdigest()
+
+
 def default_store(project: Path) -> Path:
-    key = hashlib.sha256(os.fsencode(str(project.resolve()))).hexdigest()
-    return Path.home() / '.qhaway' / 'projects' / key / 'memory'
+    return Path.home() / '.qhaway' / 'projects' / _project_key(project) / 'memory'
 
 
 def _parse(raw: bytes) -> dict:
@@ -67,7 +70,7 @@ def _split(raw: bytes) -> tuple[bytes, bytes | None]:
 
 def _payload(store: Path) -> bytes:
     # JSON basic strings/arrays are valid TOML for these string-only values.
-    args = ['--python', '3.14', 'qhaway', 'serve', '--dir', str(store), '--inline-index']
+    args = ['--python', '3.14', 'qhaway', 'serve', '--dir', str(store)]
     return ('[mcp_servers.qhaway]\n'
             f'command = {json.dumps(setup._uvx(), ensure_ascii=False)}\n'
             f'args = {json.dumps(args, ensure_ascii=False)}\n'
@@ -88,10 +91,11 @@ def _write(path: Path, raw: bytes) -> None:
 
 
 @contextmanager
-def _locked(directory: Path):
+def _locked(path: Path):
     # Reuse the existing POSIX/Windows file-lock primitive. Never unlink the
     # lock: waiting installers must continue locking the same inode.
-    with (directory / '.qhaway-install.lock').open('a+b') as handle:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a+b') as handle:
         handle.seek(0)
         deadline = time.monotonic() + 5
         while True:
@@ -131,8 +135,12 @@ def configure(project: Path, store: Path | None = None, *, remove: bool = False)
         raise ValueError('Codex config is a symlink; left untouched')
     if remove and not path.exists():
         return 'absent', None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with _locked(path.parent):
+    lock = (Path.home() / '.qhaway' / 'locks' / f'{_project_key(project)}.lock').resolve()
+    if any(lock.is_relative_to(root.resolve()) for root in native_roots):
+        raise ValueError('Installer lock aliases native Codex memory; left untouched')
+    with _locked(lock):
+        if path.parent.is_symlink() or path.parent.is_junction():
+            raise ValueError('Project .codex directory is an alias; left untouched')
         if path.is_symlink():
             raise ValueError('Codex config is a symlink; left untouched')
         raw = path.read_bytes() if path.exists() else b''
@@ -140,7 +148,14 @@ def configure(project: Path, store: Path | None = None, *, remove: bool = False)
         if remove:
             if owned is None:
                 return 'absent', None
-            _write(path, rest)
+            if rest:
+                _write(path, rest)
+            else:
+                path.unlink()
+                try:
+                    path.parent.rmdir()
+                except OSError:
+                    pass  # Nonempty (other Codex files) or concurrently changed.
             return 'removed', None
         payload = _payload(selected)
         if owned is not None:
@@ -151,5 +166,6 @@ def configure(project: Path, store: Path | None = None, *, remove: bool = False)
         block = b'\n\n' + _START + digest + b' >>>\n' + payload + _END
         updated = raw + block
         _parse(updated)  # Reject conflicts with inline/sealed tables before writing.
+        path.parent.mkdir(parents=True, exist_ok=True)
         _write(path, updated)
         return 'installed', selected
