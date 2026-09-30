@@ -28,7 +28,9 @@ uvx qhaway init --host codex --dir /absolute/path/to/curated-memory
 `--project /path/to/project` selects a project from another working directory.
 Relative paths are resolved from the command's working directory. Repeating the
 same installation is a no-op; use the same `--dir` for a custom store. Changing
-the store requires uninstalling the managed entry and installing again. No
+the store requires uninstalling the managed entry and installing again. Running
+`init` over a managed entry from 0.7.0, for the same store, updates it in place
+to `uvx --isolated` (use `uvx --isolated qhaway@latest init --host codex`). No
 memory files are moved or deleted. `install` is an alias of `init`; omitting
 `--host` retains the existing Claude installation behavior.
 

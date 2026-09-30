@@ -68,9 +68,18 @@ def _split(raw: bytes) -> tuple[bytes, bytes | None]:
     return rest, payload
 
 
+def _owned_store(owned: bytes) -> Path | None:
+    args = _server(_parse(owned)).get('args', [])
+    if '--dir' in args and args.index('--dir') + 1 < len(args):
+        return Path(args[args.index('--dir') + 1]).expanduser().resolve()
+    return None
+
+
 def _payload(store: Path) -> bytes:
     # JSON basic strings/arrays are valid TOML for these string-only values.
-    args = ['--python', '3.14', 'qhaway', 'serve', '--dir', str(store)]
+    # --isolated: ignore an installed qhaway tool, which uvx would otherwise
+    # prefer, pinning the server to that tool's version (#31).
+    args = ['--isolated', '--python', '3.14', 'qhaway', 'serve', '--dir', str(store)]
     return ('[mcp_servers.qhaway]\n'
             f'command = {json.dumps(setup._uvx(), ensure_ascii=False)}\n'
             f'args = {json.dumps(args, ensure_ascii=False)}\n'
@@ -158,12 +167,20 @@ def configure(project: Path, store: Path | None = None, *, remove: bool = False)
                     pass  # Nonempty (other Codex files) or concurrently changed.
             return 'removed', None
         payload = _payload(selected)
-        if owned is not None:
-            if _parse(owned) != _parse(payload):
-                raise ValueError('qhaway is installed with different settings; uninstall it first to change stores')
-            return 'already', selected
         digest = hashlib.sha256(payload).hexdigest().encode()
         block = b'\n\n' + _START + digest + b' >>>\n' + payload + _END
+        if owned is not None:
+            if _parse(owned) == _parse(payload):
+                return 'already', selected
+            if _owned_store(owned) != selected:
+                raise ValueError('qhaway is installed with different settings; uninstall it first to change stores')
+            # Our intact block from an older qhaway, same store: replace it where
+            # it stands, so settings written after it keep their order (#31).
+            old = b'\n\n' + _START + hashlib.sha256(owned).hexdigest().encode() + b' >>>\n' + owned + _END
+            updated = raw.replace(old, block, 1)
+            _parse(updated)
+            _write(path, updated)
+            return 'updated', selected
         updated = raw + block
         _parse(updated)  # Reject conflicts with inline/sealed tables before writing.
         path.parent.mkdir(parents=True, exist_ok=True)

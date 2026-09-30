@@ -27,10 +27,10 @@ async def smoke(project):
     subprocess.run(install, check=True, timeout=30)
     assert installed == config.read_bytes()
     settings = tomllib.loads(installed.decode())['mcp_servers']['qhaway']
-    assert settings['args'][:3] == ['--python', '3.14', 'qhaway']
+    assert settings['args'][:4] == ['--isolated', '--python', '3.14', 'qhaway']
     params = StdioServerParameters(
         command=sys.executable,
-        args=['-m', 'qhaway.cli', *settings['args'][3:]],
+        args=['-m', 'qhaway.cli', *settings['args'][settings['args'].index('qhaway') + 1:]],
         cwd=str(project),
     )
     async with stdio_client(params) as (read, write):

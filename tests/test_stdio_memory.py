@@ -27,7 +27,7 @@ def test_stdio_curated_memory_round_trip(tmp_path, monkeypatch):
     server_args = config['mcp_servers']['qhaway']['args']
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "qhaway.cli", *server_args[3:]],
+        args=["-m", "qhaway.cli", *server_args[server_args.index("qhaway") + 1:]],
         cwd=str(tmp_path),
         env={**os.environ, "CLAUDE_PROJECT_DIR": str(tmp_path / "decoy")},
     )

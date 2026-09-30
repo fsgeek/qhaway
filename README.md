@@ -75,6 +75,19 @@ it: `uvx qhaway uninstall` (your `MEMORY.md` files are left in place).
 (Requires [`uv`](https://docs.astral.sh/uv/) — `uvx` fetches qhaway and a
 managed Python on first use.)
 
+**Upgrading an install from 0.7.0 or earlier:** run
+`uvx --isolated qhaway@latest init`, then restart Claude Code. Those versions
+wrote hook and server commands without `--isolated`, so an installed qhaway tool
+(`uv tool install`, below) kept them on that tool's version. `init` rewrites
+only commands it wrote itself in their original form, and leaves a customized
+entry alone with a notice. The `--isolated` in the command above matters: plain
+`uvx qhaway` would run the installed tool's old `init`.
+
+**Offline:** uv checks the package index when its cached copy is more than about
+ten minutes old. With no network, the hooks fail after a timeout, and the session
+starts without memory. Set `UV_OFFLINE=1` (or `offline = true` in `uv.toml`)
+while offline ([#33](https://github.com/fsgeek/qhaway/issues/33)).
+
 ### As a Claude Code plugin
 
 If you'd rather load qhaway per-session from a checkout instead of installing it
@@ -98,6 +111,9 @@ uv tool install qhaway
 # or
 pipx install qhaway
 ```
+
+The Claude Code and Codex integrations run `uvx --isolated`, so an installed CLI
+doesn't change which version they use.
 
 Embedded and zero-infra either way: it uses stdlib SQLite (WAL mode) as a single
 local file. No server, no database to provision, no credentials.
