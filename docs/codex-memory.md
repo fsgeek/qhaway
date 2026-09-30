@@ -84,7 +84,7 @@ rather than adding a duplicate. Replace both paths with paths on your machine:
 ```toml
 [mcp_servers.qhaway]
 command = "/absolute/path/to/uvx"
-args = ["--python", "3.14", "--from", "qhaway==0.7.1", "qhaway", "serve", "--dir", "/absolute/path/to/curated-memory"]
+args = ["--python", "3.14", "--from", "qhaway==0.7.2", "qhaway", "serve", "--dir", "/absolute/path/to/curated-memory"]
 startup_timeout_sec = 30
 ```
 
