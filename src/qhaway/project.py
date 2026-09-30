@@ -238,9 +238,12 @@ def _entry_line(row: dict[str, Any]) -> str:
     markers = ""
     for retraction in row.get("retractions", []):
         claim = retraction.get("retracted_claim")
-        if claim and claim in hook:
+        if claim:
+            title = title.replace(claim, f"~~{claim}~~", 1)
             hook = hook.replace(claim, f"~~{claim}~~", 1)
-        markers += f" [retracted: {_title(retraction)}]({retraction['file']})"
+        # The retraction's own line carries its reason; its filename (a slug of
+        # its title) is enough of a pointer here.
+        markers += f" [retracted]({retraction['file']})"
     return f"- [{title}]({row['file']}) — {hook}{markers}"
 
 
