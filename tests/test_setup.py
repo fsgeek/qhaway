@@ -156,8 +156,8 @@ def test_hook_commands_use_absolute_uvx_path(tmp_path, monkeypatch):
     s = tmp_path / "settings.json"
     setup.install(s)
     flat = json.dumps(_read(s))
-    assert "/home/u/.local/bin/uvx qhaway session-start" in flat
-    assert "/home/u/.local/bin/uvx qhaway session-end" in flat
+    assert "/home/u/.local/bin/uvx --isolated qhaway session-start" in flat
+    assert "/home/u/.local/bin/uvx --isolated qhaway session-end" in flat
 
 
 def test_falls_back_to_bare_uvx_when_unresolvable(tmp_path, monkeypatch):
@@ -166,4 +166,4 @@ def test_falls_back_to_bare_uvx_when_unresolvable(tmp_path, monkeypatch):
     m = tmp_path / ".claude.json"
     setup.install(s, mcp_config_path=m)
     assert _read(m)["mcpServers"]["qhaway"]["command"] == "uvx"
-    assert "uvx qhaway session-start" in json.dumps(_read(s))
+    assert "uvx --isolated qhaway session-start" in json.dumps(_read(s))
