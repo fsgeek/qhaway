@@ -102,7 +102,7 @@ qhaway does not authenticate callers (the host does), does not encrypt at rest
 (the store is the operator's plaintext by design — files-as-truth), and does
 not classify memory content. Each would add a trust story qhaway cannot keep.
 
-## Managed Codex installer (unreleased)
+## Managed Codex installer (0.7.0)
 
 `init --host codex` edits only the selected project's `.codex/config.toml`.
 The operator chooses whether that project receives a shared store or a separate
