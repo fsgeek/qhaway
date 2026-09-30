@@ -33,7 +33,7 @@ def test_retracted_memory_stays_visible_with_a_marker(tmp_path):
     text = server.recall(memory_dir=str(tmp_path))
 
     line = _line(text, "users-claim")
-    assert line.endswith(" [retracted: no-outside-users](no-outside-users.md)")
+    assert line.endswith(" [retracted](no-outside-users.md)")
     assert text.splitlines()[0] == "2 matching memories; all shown."
 
 
@@ -61,7 +61,7 @@ def test_claim_not_in_description_leaves_only_the_marker(tmp_path):
     line = _line(server.recall(memory_dir=str(tmp_path)), "users-claim")
 
     assert "~~" not in line
-    assert "[retracted: no-outside-users](no-outside-users.md)" in line
+    assert "[retracted](no-outside-users.md)" in line
 
 
 def test_remember_records_a_retraction(tmp_path):
@@ -77,7 +77,7 @@ def test_remember_records_a_retraction(tmp_path):
 
     line = _line(server.recall(memory_dir=str(tmp_path)), "users-claim")
     assert "~~uses qhaway extensively~~" in line
-    assert "[retracted: no outside users](no-outside-users.md)" in line
+    assert "[retracted](no-outside-users.md)" in line
 
 
 def test_recall_tool_remember_accepts_retracts(tmp_path):
@@ -90,7 +90,7 @@ def test_recall_tool_remember_accepts_retracts(tmp_path):
         "retracts": "users-claim",
     }))
 
-    assert "[retracted: no outside users]" in server.recall(memory_dir=str(tmp_path))
+    assert "[retracted](no-outside-users.md)" in server.recall(memory_dir=str(tmp_path))
 
 
 def test_a_marker_link_does_not_count_its_target_as_shown(tmp_path):
@@ -110,3 +110,18 @@ def test_a_marker_link_does_not_count_its_target_as_shown(tmp_path):
     shown = [l for l in result.markdown.splitlines() if l.startswith("- [")]
     assert len(shown) == 1 and "(zz-no-outside-users.md)" in shown[0]  # only as a marker
     assert sum(result.overflow.omitted_counts.values()) == 1
+
+
+def test_quoted_claim_is_struck_in_the_title_too(tmp_path):
+    # The label that lags the record is often the title itself.
+    (tmp_path / "adoption.md").write_text(
+        "---\nname: the community uses qhaway extensively\ntype: project\ndescription: reads positive\n---\nb\n",
+        encoding="utf-8",
+    )
+    _write(tmp_path, "no-outside-users", "no outside users",
+           extra="retracts: adoption\nretracted_claim: uses qhaway extensively\n")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(memory_dir=str(tmp_path))
+
+    assert "- [the community ~~uses qhaway extensively~~](adoption.md)" in text
