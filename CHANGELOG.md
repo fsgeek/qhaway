@@ -2,6 +2,12 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [Unreleased]
+
+### Fixed
+
+- The hooks, the Claude MCP server entry and the Codex server entry now run `uvx --isolated` ([#31](https://github.com/fsgeek/qhaway/issues/31)). Without it, uvx prefers an installed qhaway tool (`uv tool install qhaway`, the README's route for the CLI) over the package index, so anyone with the tool installed kept running the integration at that tool's version. Re-running `init` upgrades commands qhaway itself wrote in their original form and leaves customized entries unchanged, with a notice. To upgrade: `uvx --isolated qhaway@latest init` (and `--host codex` for Codex projects).
+
 ## [0.7.0] - 2026-09-30
 
 ### Added
