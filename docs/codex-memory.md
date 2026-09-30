@@ -4,10 +4,9 @@ Qhaway's `recall` and `remember` tools serve local Codex projects through stdio
 MCP. Khipumaq searches conversation history separately. Native Codex memory is
 not required, and Claude does not need to be installed or running.
 
-## Install for Codex (unreleased)
+## Install for Codex
 
-The installer below is implemented on this branch and is not in published 0.6.0.
-After a release containing it, run from the project you want to equip:
+Requires qhaway 0.7.0 or later. From the project you want to equip, run:
 
 ```sh
 uvx qhaway init --host codex
@@ -83,7 +82,7 @@ rather than adding a duplicate. Replace both paths with paths on your machine:
 ```toml
 [mcp_servers.qhaway]
 command = "/absolute/path/to/uvx"
-args = ["--python", "3.14", "--from", "qhaway==0.6.0", "qhaway", "serve", "--dir", "/absolute/path/to/curated-memory"]
+args = ["--python", "3.14", "--from", "qhaway==0.7.0", "qhaway", "serve", "--dir", "/absolute/path/to/curated-memory"]
 startup_timeout_sec = 30
 ```
 
