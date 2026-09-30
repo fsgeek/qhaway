@@ -30,7 +30,7 @@ async def smoke(project):
     assert settings['args'][:4] == ['--isolated', '--python', '3.14', 'qhaway']
     params = StdioServerParameters(
         command=sys.executable,
-        args=['-m', 'qhaway.cli', *settings['args'][3:]],
+        args=['-m', 'qhaway.cli', *settings['args'][settings['args'].index('qhaway') + 1:]],
         cwd=str(project),
     )
     async with stdio_client(params) as (read, write):

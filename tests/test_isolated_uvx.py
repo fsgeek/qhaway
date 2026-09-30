@@ -159,3 +159,43 @@ def test_codex_init_still_refuses_a_different_store(codex_env):
 
     assert cli.main(["init", "--host", "codex", "--project", str(project), "--dir", str(home / "other")]) == 1
     assert config.read_bytes() == before
+
+
+@pytest.mark.parametrize("custom", [
+    "python -m qhaway session-start",
+    "env QH=1 qhaway session-start",
+    "uvx --from qhaway==0.5.0 qhaway session-start",
+])
+def test_only_a_uvx_executable_prefix_counts_as_the_old_form(tmp_path, which, capsys, custom):
+    s = tmp_path / "settings.json"
+    settings = _old_settings()
+    settings["hooks"]["SessionStart"][0]["hooks"][0]["command"] = custom
+    s.write_text(json.dumps(settings))
+
+    setup.install(s)
+
+    assert _read(s)["hooks"]["SessionStart"][0]["hooks"][0]["command"] == custom
+    assert "--isolated" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("uvx", ["uvx", r"C:\Users\John Smith\.local\bin\uvx.EXE", "/home/u/.local/bin/uvx"])
+def test_old_forms_with_bare_windows_and_absolute_uvx_are_upgraded(tmp_path, which, uvx):
+    s = tmp_path / "settings.json"
+    s.write_text(json.dumps(_old_settings(uvx)))
+
+    assert setup.install(s) == "updated"
+
+    assert _read(s)["hooks"]["SessionStart"][0]["hooks"][0]["command"] == f"{uvx} --isolated qhaway session-start"
+
+
+def test_cli_update_message_does_not_claim_an_unchanged_half(tmp_path, which, monkeypatch, capsys):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(json.dumps(_old_settings()))
+    custom = {"command": UVX, "args": ["--python", "3.13", "qhaway", "serve"]}
+    (tmp_path / ".claude.json").write_text(json.dumps({"mcpServers": {"qhaway": custom}}))
+
+    assert cli.main(["init"]) == 0
+
+    out = capsys.readouterr().out
+    assert "updated" in out and "MCP server" not in out
