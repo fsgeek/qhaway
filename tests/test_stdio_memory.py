@@ -22,7 +22,10 @@ def test_stdio_curated_memory_round_trip(tmp_path):
     async def exercise(create):
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
-                await session.initialize()
+                initialized = await session.initialize()
+                # A fresh client must locate full bodies from the handshake,
+                # without a hand-written AGENTS file or Claude path discovery.
+                assert str(root.resolve()) in initialized.instructions
                 listing = await session.list_tools()
                 assert {"recall", "remember"} <= {tool.name for tool in listing.tools}
 
