@@ -125,3 +125,12 @@ def test_quoted_claim_is_struck_in_the_title_too(tmp_path):
     text = server.recall(memory_dir=str(tmp_path))
 
     assert "- [the community ~~uses qhaway extensively~~](adoption.md)" in text
+
+
+def test_handshake_tells_instances_when_to_retract_rather_than_supersede(tmp_path):
+    # An instance correcting a wrong claim reads the handshake; without this it
+    # reaches for supersedes, which hides the lesson #27 exists to keep visible.
+    instructions = server.build_server(str(tmp_path)).instructions
+
+    assert "retracts" in instructions
+    assert "supersedes" in instructions
