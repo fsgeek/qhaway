@@ -2,6 +2,12 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [Unreleased]
+
+### Fixed
+
+- `init` and `uninstall` recognize qhaway's hooks by their command, not only by the `"//": "qhaway-managed"` marker. Something can rewrite `~/.claude/settings.json` and drop that marker (seen on a real machine). When it had, re-running `init` (as the 0.7.1 upgrade instructions say to) appended a second pair of hooks, loading memory twice per session, and `uninstall` left the old pair behind. Now an unmarked old-form hook is upgraded in place, and `uninstall` removes qhaway's commands while keeping other hooks in the same block. If you ran `init` on 0.7.1 and have duplicate qhaway hooks, run `uvx --isolated qhaway@latest uninstall`, then `uvx --isolated qhaway@latest init`.
+
 ## [0.7.1] - 2026-09-30
 
 ### Fixed
