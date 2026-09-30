@@ -143,10 +143,13 @@ Two verbs are exposed to the model:
   size: `72 matching memories; all shown.`, or the full size in bytes and how
   many are shown. `limit` caps the entries; `limit=0` returns only the counts,
   so a caller can see what a slice would cost before loading it.
-- `remember(type, title, body, description?, links?, supersedes?)` — writes a
-  topic file then reconciles. Pass `supersedes` naming the memory this one
-  retires, and recall demotes the loser. Files stay truth; the DB is a derived,
-  rebuildable view.
+- `remember(type, title, body, description?, links?, supersedes?, retracts?, retracted_claim?)`
+  — writes a topic file then reconciles. Pass `supersedes` naming the memory
+  this one retires, and recall demotes the loser. When an earlier memory's claim
+  was *wrong*, pass `retracts` instead: the earlier memory stays visible, its
+  line marked `[retracted](<this file>)`, and a `retracted_claim` quoted exactly
+  is struck through wherever it appears in that line. Files stay truth; the DB
+  is a derived, rebuildable view.
 
 You don't run the server yourself — `init` wires it. Under the hood the MCP
 server derives its memory directory from `CLAUDE_PROJECT_DIR` and provisions it

@@ -2,6 +2,16 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [Unreleased]
+
+### Added
+
+- Retractions ([#27](https://github.com/fsgeek/qhaway/issues/27)). A memory with `retracts:` (a slug, `[[wikilink]]` or list, like `supersedes:`) marks an earlier memory's claim as wrong without hiding it. The earlier memory keeps its line in every projection, with `[retracted](<retraction file>)` appended, and an optional `retracted_claim:` quoted exactly is struck through in its title and description. `remember()` accepts `retracts` and `retracted_claim`. Use `supersedes` when understanding moved on; use `retracts` when a claim was wrong and later readers need to see that it was believed.
+
+### Changed
+
+- The index database schema is now version 3. An existing index rebuilds from the memory files automatically on first use.
+
 ## [0.6.0] - 2026-09-29
 
 ### Added
