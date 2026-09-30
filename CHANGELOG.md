@@ -2,6 +2,26 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [Unreleased]
+
+### Added
+
+- `init` / `install --host codex` connects one local Codex project to curated
+  memory, independently of Claude. `--project` selects the project and `--dir`
+  selects a shared or separate store; the default lives under `~/.qhaway`.
+  `uninstall --host codex` removes only unchanged managed configuration and
+  leaves memories and unrelated settings intact.
+- CI checks Codex configuration and real MCP read/write using the installed
+  wheel on Linux, macOS, and Windows, without model API credentials.
+
+### Changed
+
+- Updated the locked PyJWT dependency from 2.13.0 to 2.15.1 to clear the
+  dependency security audit.
+- MCP instructions now give the full-topic directory and describe bounded
+  retrieval and revisable judgments, replacing the assertion that recalled
+  memory is always "the latest word."
+
 ## [0.6.0] - 2026-09-29
 
 ### Added

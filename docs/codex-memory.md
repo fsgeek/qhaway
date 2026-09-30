@@ -1,11 +1,72 @@
 # Curated project memory in local Codex
 
-Qhaway's existing `recall` and `remember` tools can serve a local Codex project
-through stdio MCP. This is a manual integration using an explicit memory store;
-`qhaway init` still installs for Claude Code. Khipumaq, when installed, searches
-conversation history separately. Native Codex memory is not required.
+Qhaway's `recall` and `remember` tools serve local Codex projects through stdio
+MCP. Khipumaq searches conversation history separately. Native Codex memory is
+not required, and Claude does not need to be installed or running.
 
-## Connect one project
+## Install for Codex (unreleased)
+
+The installer below is implemented on this branch and is not in published 0.6.0.
+After a release containing it, run from the project you want to equip:
+
+```sh
+uvx qhaway init --host codex
+```
+
+This adds a managed qhaway entry to `.codex/config.toml` in that project. The
+default curated store is `~/.qhaway/projects/<project-path-hash>/memory`,
+independent of Claude and native Codex memory. The absolute resolved project
+path determines the hash; a moved project needs an explicit `--dir` pointing
+to its previous store to retain continuity. The server creates a new store
+when first started. Existing global Codex configuration remains unchanged.
+
+To share an existing curated store or choose its location:
+
+```sh
+uvx qhaway init --host codex --dir /absolute/path/to/curated-memory
+```
+
+`--project /path/to/project` selects a project from another working directory.
+Relative paths are resolved from the command's working directory. Repeating the
+same installation is a no-op; use the same `--dir` for a custom store. Changing
+the store requires uninstalling the managed entry and installing again. No
+memory files are moved or deleted. `install` is an alias of `init`; omitting
+`--host` retains the existing Claude installation behavior.
+
+Restart Codex in the trusted project, check `/mcp`, and ask it to call qhaway
+`recall(limit=0)`. The server's handshake gives the instance its full-topic
+directory and guidance about counts, omissions, evidence, and recording
+memories; the installer does not edit `AGENTS.md` or `AGENTS.override.md`.
+An empty new store correctly returns no matching memories. Choose `remember`
+when there is a durable lesson worth recording; no seed memory is required.
+
+The generated configuration contains machine-specific paths. Keep it local
+using `.git/info/exclude` or your established configuration policy. Installation
+does not change ignore rules or grant project trust. `uvx` needs to be available;
+the configured launcher fetches the published qhaway package, just as the Claude
+installer does. Before release, test the checkout with `uv run qhaway` and use
+the wheel smoke test below to exercise the new server rather than published 0.6.0.
+
+Remove the managed connection from that project with:
+
+```sh
+uvx qhaway uninstall --host codex
+```
+
+Restart Codex to disconnect. Topic files, generated indexes, other MCP servers,
+and native memory remain intact. A harmless `.qhaway-install.lock` remains in
+`.codex` so concurrent installers always lock the same file.
+
+The installer preserves unrelated config bytes, including comments and line
+endings. It refuses malformed TOML, a symlinked config or `.codex` directory, a target that aliases global Codex
+configuration, an unmanaged qhaway
+entry, or edits to its checksummed block. If you want to customize the managed
+block, remove it with uninstall first and use the manual setup below. To migrate
+this manual pilot, remove only its existing qhaway table yourself, then run init
+with `--dir` naming the same store. The installer never silently takes ownership
+of a user's entry. Back up and inspect manual edits before removing them.
+
+## Manual setup (also works with 0.6.0)
 
 Choose a curated-memory directory. It can be the existing qhaway/Claude store
 for this project if you intend both clients to contribute to the same memories,
@@ -81,7 +142,10 @@ It replaces automatic discovery of `AGENTS.md` at that directory, so explicitly
 include any existing repository guidance rather than hiding it. See
 [Codex instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
 
-## Remove or disable
+## Remove or disable a manual connection
+
+For an installer-managed connection, use `qhaway uninstall --host codex` as
+described above. The instructions below apply only to the manual configuration.
 
 Set `enabled = false` inside the project's `[mcp_servers.qhaway]` table, or
 remove just that table, then restart Codex. Remove the guidance you added,
@@ -125,8 +189,24 @@ instances, or concurrent cross-client write behavior. The selected July memory
 also contained an obsolete assertion that qhaway had no text query; the pilot
 record qualifies that assertion without superseding unrelated historical claims.
 
-Known 0.6.0 limitations: `recall` uses its fixed default projection budget rather
+Historical 0.6.0 limitations: `recall` uses its fixed default projection budget rather
 than the inline-index budget; server instructions call recall "the latest word"
 even though stored judgments can be wrong. The local guidance above qualifies
 that wording. Neither limitation requires a new memory system to begin this
 pilot, but both are candidates for focused follow-up based on use.
+
+## Automated checks without model credentials
+
+The standard pytest suite covers Codex CLI installation and removal, separate
+project stores, ownership conflicts, modified config, byte preservation,
+concurrent installers, and the real stdio round trip. Existing Claude
+installation tests run in the same suite. The CI wheel job runs
+`scripts/smoke_codex_install.py` on Linux, macOS, and Windows: it installs and
+removes configuration in a temporary project and reads/writes synthetic
+memories over MCP using the installed wheel. It substitutes that wheel's Python
+for the generated uvx launcher so it never downloads a different qhaway build.
+No test invokes a model or needs a model API key.
+
+A local check with a fresh authenticated instance is still needed to observe
+whether it uses these instructions well. Successful protocol calls do not prove
+consistent retrieval choices, useful curation, or shared-store concurrency.

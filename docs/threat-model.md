@@ -101,3 +101,26 @@ layer in core; the provider is discovered at serve time from an operator-owned
 qhaway does not authenticate callers (the host does), does not encrypt at rest
 (the store is the operator's plaintext by design — files-as-truth), and does
 not classify memory content. Each would add a trust story qhaway cannot keep.
+
+## Managed Codex installer (unreleased)
+
+`init --host codex` edits only the selected project's `.codex/config.toml`.
+The operator chooses whether that project receives a shared store or a separate
+one. The default under `~/.qhaway` does not use Claude discovery or native Codex
+memory. The server handshake exposes the chosen local store path to the client.
+
+Ownership is a delimited checksum-protected block. This is an accidental-edit
+and lifecycle signal, not an authentication mechanism against a malicious local
+writer. Unmanaged entries and modified blocks are refused. Original and resulting
+TOML are parsed before replacement; unrelated bytes are preserved. Atomic
+replacement preserves an existing file's mode; new configs use mode 0600 where
+supported. Symlinked config files and aliased `.codex` directories are refused. Resolved
+destinations matching default/custom global Codex configuration are refused,
+and both default and explicit stores are resolved before native-memory checks. A per-project OS file lock
+serializes qhaway installers, but cannot serialize an external editor that does
+not use that lock. Such editors must not write simultaneously with installation.
+
+No agent instruction file, Claude setting, native-memory file, credential, or
+cloud account is modified. The existing uvx package-launch supply-chain boundary
+also applies here. CI operates on synthetic temporary stores and installed
+wheels without invoking models or provisioning model API keys.

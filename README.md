@@ -160,10 +160,18 @@ writer updates it via atomic temp-file + replace.
 
 ## Local Codex
 
-Codex can connect to the existing MCP tools with an explicit curated-memory
-store. See the [manual setup and pilot findings](docs/codex-memory.md) for
-project-scoped configuration, full-memory file access, and removal. This does
-not require native Codex memory; `qhaway init` still targets Claude Code.
+Codex support is available on this branch for the next release:
+
+```sh
+qhaway init --host codex       # project-local connection, independent memory store
+qhaway uninstall --host codex  # disconnect; preserve memories
+```
+
+Use `--dir /path/to/memory` to share an existing curated store, and `--project`
+to select a project other than the current directory. Restart Codex after setup.
+See [Codex setup and pilot findings](docs/codex-memory.md) for details and the
+manual configuration that already works with published 0.6.0. Native Codex
+memory and Claude are not required; plain `qhaway init` still targets Claude.
 
 ## Hookless hosts (Claude Desktop / Cowork)
 
