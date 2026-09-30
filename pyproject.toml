@@ -1,6 +1,6 @@
 [project]
 name = "qhaway"
-version = "0.7.0"
+version = "0.7.1"
 description = "Keep an agent's Markdown memory index within its loader's budget, and make what it sets aside cheap to get back."
 readme = "README.md"
 requires-python = ">=3.14"
