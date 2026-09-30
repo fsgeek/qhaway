@@ -33,14 +33,15 @@ def _emit(root: Path, event: dict) -> None:
 
 
 def remember(type, title, body, description=None, links=None, supersedes=None, memory_dir=".",
-             inline_budget=None) -> str:
+             inline_budget=None, retracts=None, retracted_claim=None) -> str:
     if type not in VALID_TYPES:
         raise ValueError(f"invalid type {type!r}; must be one of {sorted(VALID_TYPES)}")
     root = Path(memory_dir)
     if not root.is_dir():
         raise FileNotFoundError(f"memory directory is not readable: {memory_dir}")
 
-    text = reconcile.compose_topic_file(type, title, body, description, links, supersedes)
+    text = reconcile.compose_topic_file(type, title, body, description, links, supersedes,
+                                        retracts, retracted_claim)
     stem = reconcile.slugify(title)
     filename = _exclusive_write(root, stem, text)
     if inline_budget is None:
@@ -184,14 +185,17 @@ def build_server(memory_dir: str, inline_budget=None):
                             query=query)
 
     @mcp.tool()
-    def remember(type, title, body, description=None, links=None, supersedes=None) -> str:
+    def remember(type, title, body, description=None, links=None, supersedes=None,
+                 retracts=None, retracted_claim=None) -> str:
         """Write a memory to the structured store. `type` is one of
         user/feedback/project/reference. When this memory replaces an earlier
         one, pass `supersedes` (a slug, [[wikilink]], or list of them) naming the
-        memory it retires — recall will then demote the loser. Returns the topic
-        filename written."""
+        memory it retires — recall will then demote the loser. When an earlier
+        memory's claim was wrong, pass `retracts` instead: it stays visible,
+        marked as retracted; `retracted_claim` quotes the dead claim exactly.
+        Returns the topic filename written."""
         return _remember_impl(type, title, body, description, links, supersedes, memory_dir,
-                              inline_budget)
+                              inline_budget, retracts, retracted_claim)
 
     return mcp
 

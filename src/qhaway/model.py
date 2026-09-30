@@ -31,7 +31,7 @@ except ImportError:  # Windows: lock one byte of the lock file instead
     def _unlock(handle) -> None:
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DB_NAME = ".qhaway.db"
 LOCK_NAME = ".qhaway.db.reset.lock"
 _DB_SUFFIXES = ("", "-wal", "-shm")
@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     body TEXT,
     mtime_ns INTEGER,
     size INTEGER,
-    claim TEXT
+    claim TEXT,
+    retracted_claim TEXT
 )
 """
 
@@ -68,7 +69,7 @@ _CREATE_EDGE_INDEX = "CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges (dst_slu
 _NODE_COLUMNS = (
     "file", "name", "content_type", "description", "role",
     "status", "origin_session", "date_hint", "body", "mtime_ns", "size",
-    "claim",
+    "claim", "retracted_claim",
 )
 
 
@@ -195,6 +196,7 @@ def upsert_file(conn: sqlite3.Connection, path: Path) -> None:
             node["role"], node["status"], node["origin_session"], node["date_hint"],
             node["body"], stat.st_mtime_ns, stat.st_size,
             json.dumps(node["claim"]) if node.get("claim") else None,
+            node.get("retracted_claim"),
         ],
     )
     for dst_slug in node["links"]:
@@ -205,6 +207,11 @@ def upsert_file(conn: sqlite3.Connection, path: Path) -> None:
     for dst_slug in node.get("supersedes", []):
         conn.execute(
             "INSERT OR IGNORE INTO edges (src_file, dst_slug, kind) VALUES (?, ?, 'SUPERSEDES')",
+            [node["file"], dst_slug],
+        )
+    for dst_slug in node.get("retracts", []):
+        conn.execute(
+            "INSERT OR IGNORE INTO edges (src_file, dst_slug, kind) VALUES (?, ?, 'RETRACTS')",
             [node["file"], dst_slug],
         )
 

@@ -49,6 +49,8 @@ def parse_memory_file(filepath: str) -> dict[str, Any]:
         "body": body,
         "links": [_normalize_link(match) for match in WIKILINK_RE.findall(body)],
         "supersedes": _supersedes(metadata),
+        "retracts": _retracts(metadata),
+        "retracted_claim": _string_or_none(metadata.get("retracted_claim")),
         "parse_warning": parse_warning,
     }
 
@@ -61,6 +63,13 @@ def _supersedes(metadata: dict[str, Any]) -> list[str]:
     """
     slugs: list[str] = []
     _collect_supersedes(metadata.get("supersedes"), slugs)
+    return slugs
+
+
+def _retracts(metadata: dict[str, Any]) -> list[str]:
+    """Slugs this node retracts, from a `retracts:` key; same forms as `supersedes:`."""
+    slugs: list[str] = []
+    _collect_supersedes(metadata.get("retracts"), slugs)
     return slugs
 
 

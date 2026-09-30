@@ -111,7 +111,9 @@ def normalize_link(raw: str) -> str:
 
 
 def compose_frontmatter(type: str, title: str, description: str | None,
-                        supersedes: list[str] | None = None) -> str:
+                        supersedes: list[str] | None = None,
+                        retracts: list[str] | None = None,
+                        retracted_claim: str | None = None) -> str:
     data = {"name": title, "type": type}
     if description is not None:
         data["description"] = description
@@ -119,6 +121,10 @@ def compose_frontmatter(type: str, title: str, description: str | None,
         # Stored as [[wikilink]] strings so the on-disk key reads naturally and
         # round-trips through parse._supersedes (which accepts [[A]] or bare).
         data["supersedes"] = [f"[[{slug}]]" for slug in supersedes]
+    if retracts:
+        data["retracts"] = [f"[[{slug}]]" for slug in retracts]
+    if retracted_claim:
+        data["retracted_claim"] = retracted_claim
     dumped = yaml.safe_dump(
         data, allow_unicode=True, sort_keys=False, default_flow_style=False
     )
@@ -162,9 +168,12 @@ def _dedupe_normalized(values: str | list[str]) -> list[str]:
     return list(seen)
 
 
-def compose_topic_file(type, title, body, description, links, supersedes=None) -> str:
+def compose_topic_file(type, title, body, description, links, supersedes=None,
+                       retracts=None, retracted_claim=None) -> str:
     normalized_supersedes = _dedupe_normalized(supersedes) if supersedes else None
-    text = compose_frontmatter(type, title, description, normalized_supersedes) + body
+    normalized_retracts = _dedupe_normalized(retracts) if retracts else None
+    text = compose_frontmatter(type, title, description, normalized_supersedes,
+                               normalized_retracts, retracted_claim) + body
     if links:
         slugs = _dedupe_normalized(links)
         text = text.rstrip() + "\n\n" + "\n".join(f"[[{slug}]]" for slug in slugs) + "\n"
