@@ -219,3 +219,50 @@ def test_custom_codex_home_native_memory_is_protected(environment, monkeypatch):
     home, project = environment
     monkeypatch.setenv('CODEX_HOME', str(home / 'custom-codex'))
     assert install(project, '--dir', str(home / 'custom-codex/memories/nested')) == 1
+
+
+def test_home_project_cannot_modify_global_config(environment):
+    home, _ = environment
+    config = home / '.codex/config.toml'
+    config.parent.mkdir()
+    original = b'model = "keep"\n'
+    config.write_bytes(original)
+    assert install(home) == 1
+    assert uninstall(home) == 1
+    assert config.read_bytes() == original
+
+
+def test_custom_codex_home_cannot_be_selected_as_project_config(environment, monkeypatch):
+    home, project = environment
+    monkeypatch.setenv('CODEX_HOME', str(project / '.codex'))
+    assert install(project) == 1
+    assert not (project / '.codex/config.toml').exists()
+
+
+def test_codex_directory_symlink_cannot_redirect_installer(environment):
+    home, project = environment
+    elsewhere = home / 'global-settings'
+    elsewhere.mkdir()
+    config = elsewhere / 'config.toml'
+    original = b'model = "keep"\n'
+    config.write_bytes(original)
+    try:
+        (project / '.codex').symlink_to(elsewhere, target_is_directory=True)
+    except OSError:
+        pytest.skip('symlinks unavailable to this Windows account')
+    assert install(project) == 1
+    assert uninstall(project) == 1
+    assert config.read_bytes() == original
+
+
+def test_default_store_alias_cannot_enter_native_memory(environment):
+    home, project = environment
+    native = home / '.codex/memories'
+    native.mkdir(parents=True)
+    try:
+        (home / '.qhaway').symlink_to(native, target_is_directory=True)
+    except OSError:
+        pytest.skip('symlinks unavailable to this Windows account')
+    assert install(project) == 1
+    assert not (project / '.codex/config.toml').exists()
+    assert list(native.iterdir()) == []
