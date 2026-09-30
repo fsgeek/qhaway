@@ -52,6 +52,21 @@ file placement — `slugify` strips every character outside `[\w-]`, so
 path-shaped titles (`../../x`) cannot escape the store. Protocol errors go to
 stderr, never stdout (a corrupted stdout frame is a host-side failure mode).
 
+### Local Codex pilot (2026-09-29)
+
+The manual setup in [codex-memory.md](codex-memory.md) gives another local host
+access to the existing stdio tools. It adds no network listener or installer
+code. The explicit `--dir` selects the complete curated store available to that
+host; sharing it with Claude also shares the ability to add and supersede
+memories. The host's tool permissions govern calls, and the spawned server's
+filesystem permissions govern its writes. A client-side shell sandbox is not
+by itself a read-only policy for the MCP server.
+
+Topic bodies are opened by the client's filesystem tools using the configured
+store root. Returned content remains untrusted model context, including claims
+of authority. Removing the MCP configuration stops future connections after
+restart; it neither deletes memories nor revokes content already retrieved.
+
 ### 4. The installer — highest privilege operation
 `init`/`uninstall` edit `~/.claude/settings.json` (hooks) and `~/.claude.json`
 (MCP servers): the hook line it installs runs at every session start, so this

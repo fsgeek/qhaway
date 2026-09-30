@@ -158,6 +158,13 @@ exist for debugging; a normal install never invokes them by hand.)
 barrier — so the reflexive hand-edit is deflected toward the tools. qhaway's own
 writer updates it via atomic temp-file + replace.
 
+## Local Codex
+
+Codex can connect to the existing MCP tools with an explicit curated-memory
+store. See the [manual setup and pilot findings](docs/codex-memory.md) for
+project-scoped configuration, full-memory file access, and removal. This does
+not require native Codex memory; `qhaway init` still targets Claude Code.
+
 ## Hookless hosts (Claude Desktop / Cowork)
 
 Claude Desktop's Cowork keeps a per-space memory store in the same shape — topic
