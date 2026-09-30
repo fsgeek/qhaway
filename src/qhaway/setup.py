@@ -28,6 +28,21 @@ _OLD_HOOK = re.compile(
     r"^(?P<uvx>(?:.*[\\/])?uvx(?:\.exe)?) qhaway session-(?P<event>start|end)$", re.IGNORECASE
 )
 _OLD_MCP_ARGS = ["--python", "3.14", "qhaway", "serve"]
+# Any hook command qhaway has ever written, old or current. Blocks can lose the
+# "//" marker (a settings rewrite that drops unknown keys was seen in the
+# field), so qhaway's hooks are also recognized by command.
+_OURS = re.compile(
+    r"^(?:.*[\\/])?uvx(?:\.exe)? (?:--isolated )?qhaway session-(?:start|end)$", re.IGNORECASE
+)
+
+
+def _is_ours(hook) -> bool:
+    command = hook.get("command") if isinstance(hook, dict) else None
+    return isinstance(command, str) and bool(_OURS.match(command))
+
+
+def _is_marked(blk) -> bool:
+    return isinstance(blk, dict) and blk.get("//") == MARKER
 
 
 def _uvx() -> str:
@@ -70,7 +85,7 @@ def _upgrade_hooks(settings: dict, path: Path) -> bool:
     changed = False
     for event in ("SessionStart", "SessionEnd"):
         for blk in settings.get("hooks", {}).get(event, []):
-            if not (isinstance(blk, dict) and blk.get("//") == MARKER):
+            if not isinstance(blk, dict):
                 continue
             for hook in blk.get("hooks", []):
                 command = hook.get("command") if isinstance(hook, dict) else None
@@ -80,7 +95,7 @@ def _upgrade_hooks(settings: dict, path: Path) -> bool:
                 if match:
                     hook["command"] = f"{match['uvx']} --isolated qhaway session-{match['event']}"
                     changed = True
-                else:
+                elif _is_marked(blk):
                     _notice(path, "hook")
     return changed
 
@@ -99,7 +114,9 @@ def _upgrade_mcp(mcp_config: dict, path: Path) -> bool:
 
 def _hooks_installed(settings: dict) -> bool:
     for blk in settings.get("hooks", {}).get("SessionStart", []):
-        if isinstance(blk, dict) and blk.get("//") == MARKER:
+        if _is_marked(blk):
+            return True
+        if isinstance(blk, dict) and any(_is_ours(h) for h in blk.get("hooks", [])):
             return True
     return False
 
@@ -183,15 +200,28 @@ def uninstall(settings_path: Path, mcp_config_path: Path | None = None) -> str:
     did_work = False
 
     settings = _load(settings_path)
-    if _hooks_installed(settings):
-        for event in ("SessionStart", "SessionEnd"):
-            blocks = settings.get("hooks", {}).get(event, [])
-            settings["hooks"][event] = [
-                b for b in blocks
-                if not (isinstance(b, dict) and b.get("//") == MARKER)
-            ]
-            if not settings["hooks"][event]:
-                del settings["hooks"][event]
+    hooks = settings.get("hooks", {})
+    removed = False
+    for event in ("SessionStart", "SessionEnd"):
+        if event not in hooks:
+            continue
+        kept = []
+        for blk in hooks[event]:
+            if _is_marked(blk):
+                removed = True
+                continue
+            if isinstance(blk, dict) and any(_is_ours(h) for h in blk.get("hooks", [])):
+                # Unmarked block: drop only qhaway's own commands from it.
+                removed = True
+                rest = [h for h in blk["hooks"] if not _is_ours(h)]
+                if rest:
+                    kept.append({**blk, "hooks": rest})
+                continue
+            kept.append(blk)
+        hooks[event] = kept
+        if not kept:
+            del hooks[event]
+    if removed:
         if not settings.get("hooks"):
             settings.pop("hooks", None)
         _atomic_write(settings_path, settings)
