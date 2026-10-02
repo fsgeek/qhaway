@@ -10,6 +10,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ### Changed
 
+- Session-start picks the five newest project (non-guidance) memories before user and feedback memories, so standing guidance can no longer fill the 9,000-character hook budget and crowd out the latest handoff ([#46](https://github.com/fsgeek/qhaway/issues/46)). The display order is unchanged, and whatever doesn't fit is still counted in the footer.
 - Without `--dir`, `QHAWAY_MEMORY_DIR` or Claude Code's `CLAUDE_PROJECT_DIR`, commands such as `serve` used to derive a store under `~/.claude` from the current directory, creating it if needed. When there is no `~/.claude` (the user doesn't run Claude Code, e.g. `serve` under OpenCode), they now exit with status 2 and ask for `--dir` instead of putting memory inside another tool's directory.
 
 ### Fixed

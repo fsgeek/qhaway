@@ -107,7 +107,7 @@ def main(args: list[str] | None = None) -> int:
         conn = model.get_connection(directory)
         try:
             budget = project.HOOK_BUDGET if explicit_budget is None else explicit_budget
-            sys.stdout.write(project.project_slice(conn, budget=budget))
+            sys.stdout.write(project.project_slice(conn, budget=budget, frontier=project.HOOK_FRONTIER))
         finally:
             conn.close()
     return 0
@@ -182,7 +182,8 @@ def _session(which: str) -> int:
         reconcile(directory)
         conn = model.get_connection(directory)
         try:
-            result = project.project_slice_with_overflow(conn, budget=project.HOOK_BUDGET, hint="tool")
+            result = project.project_slice_with_overflow(
+                conn, budget=project.HOOK_BUDGET, hint="tool", frontier=project.HOOK_FRONTIER)
         finally:
             conn.close()
         sys.stdout.write(result.markdown)
