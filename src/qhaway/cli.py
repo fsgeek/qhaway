@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from qhaway import model, parse, paths, project, server
+from qhaway import __version__, model, parse, paths, project, server
 from qhaway import reconcile as reconcile_mod
 from qhaway import setup as setup_mod
 from qhaway.reconcile import reconcile
@@ -17,6 +17,7 @@ MEMORY_NAME = "MEMORY.md"
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="qhaway")
+    parser.add_argument("--version", action="version", version=f"qhaway {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("reconcile", "check", "serve", "index", "exit"):
         p = sub.add_parser(name)

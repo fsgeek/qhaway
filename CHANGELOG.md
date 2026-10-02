@@ -6,6 +6,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ### Added
 
+- `qhaway --version`.
 - The local event log (`events.jsonl` in the memory directory, metadata only) now records each session-start delivery (characters, budget, and the memories left out, by type), and records `recall`'s `query`, `limit`, left-out counts and first line (so a recall that found nothing is visible). Events from one MCP server process share a session id, so repeated questions within a session can be seen. These are the measurements that would have shown [#46](https://github.com/fsgeek/qhaway/issues/46), and that should guide what session-start carries. Nothing leaves the machine.
 
 ### Changed

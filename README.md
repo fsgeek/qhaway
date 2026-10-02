@@ -120,6 +120,10 @@ local file. No server, no database to provision, no credentials.
 
 ## Usage
 
+Every command works on one memory directory: `--dir /path/to/memory`, or, without
+it, Claude Code's directory for the current project
+(`~/.claude/projects/<slug>/memory`).
+
 ```sh
 # Regenerate MEMORY.md from the memory directory (the main command)
 qhaway index
@@ -142,6 +146,23 @@ qhaway index --dry-run
 To record a memory: **write a topic `.md` file, then run `qhaway index`.** Don't
 hand-edit `MEMORY.md` — it is fully derived, and any hand edit is preserved (see
 below) but won't survive into the index unless it lives in a topic file.
+
+A topic file is Markdown with YAML frontmatter:
+
+```markdown
+---
+name: Deploys go through staging first
+description: one line saying when this memory matters; the index shows it
+type: feedback        # user | feedback | project | reference
+supersedes: old-deploy-process   # optional: the filename (without .md) it replaces
+---
+The body: what happened, why, and how to apply it.
+```
+
+`type` may also sit under `metadata:`, as Claude Code writes it. `user` and
+`feedback` memories are indexed first. qhaway keeps `.qhaway.db` (its SQLite
+index) and `events.jsonl` (a local log of tool calls, metadata only) in the same
+directory. `qhaway --version` prints the installed version.
 
 ## MCP spine (remember / recall)
 
@@ -221,6 +242,9 @@ OpenCode, in `opencode.json`:
   `recall`; record durable lessons with `remember`."*
 - An empty store returns nothing useful. The value comes from what gets
   written into it.
+- `serve` makes the directory's `MEMORY.md` a short pointer to `recall`. That's
+  harmless for a host that doesn't load `MEMORY.md`; for one that does, see
+  `--inline-index` below.
 
 ## Hookless hosts (Claude Desktop / Cowork)
 
