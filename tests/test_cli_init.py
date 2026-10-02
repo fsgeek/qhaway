@@ -57,3 +57,10 @@ def test_install_alias_is_idempotent_with_init(tmp_path, capsys):
     # init sees the install-alias's work as already done — same install path
     assert _run(["init"], tmp_path) == 0
     assert "already" in capsys.readouterr().out.lower()
+
+
+def test_init_names_an_isolated_uninstall(tmp_path, capsys):
+    # A plain `uvx qhaway` runs an installed qhaway tool's (possibly older)
+    # uninstall, which may not recognize the commands this version wrote.
+    _run(["init"], tmp_path)
+    assert "uvx --isolated qhaway uninstall" in capsys.readouterr().out

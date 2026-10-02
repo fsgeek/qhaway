@@ -298,3 +298,9 @@ def test_external_lock_cannot_alias_native_memory_with_custom_store(environment)
         pytest.skip('symlinks unavailable to this Windows account')
     assert install(project, '--dir', str(home / 'separate')) == 1
     assert list(native.iterdir()) == []
+
+
+def test_codex_init_names_an_isolated_uninstall(environment, capsys):
+    _, project = environment
+    assert install(project) == 0
+    assert 'uvx --isolated qhaway uninstall --host codex' in capsys.readouterr().out
