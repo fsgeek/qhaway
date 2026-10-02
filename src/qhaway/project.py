@@ -16,6 +16,10 @@ DEFAULT_BUDGET = 24_000
 # preview of the beginning and a file path, so the omissions footer is lost
 # (#46: 9,890 characters arrived inline, 12.6KB did not).
 HOOK_BUDGET = 9_000
+# Session-start picks this many of the newest non-standing memories before the
+# standing guidance (user/feedback), so guidance can't crowd out the latest
+# handoff in a 9KB budget. Display order is unchanged.
+HOOK_FRONTIER = 5
 KNOWN_TYPES = ("user", "feedback", "project", "reference")
 FOOTER_TYPES = KNOWN_TYPES
 ENTRY_SEPARATOR = "\n"
@@ -31,6 +35,7 @@ def project_slice(
     hint: str = "cli",
     limit: int | None = None,
     query: str | None = None,
+    frontier: int = 0,
 ) -> str:
     """Return a deterministic, budgeted Markdown projection.
 
@@ -42,6 +47,7 @@ def project_slice(
     reading on (#20). `query` keeps rows whose title, description or filename
     contain every whitespace-separated term, case-insensitively; bodies are never
     searched — the trigger fields are what the index is made of.
+    `frontier` selects that many of the newest non-standing rows first.
     """
 
     terms = _query_terms(query)
@@ -81,9 +87,10 @@ def project_slice(
     reserve = _byte_len(_join_lines([_partial_header(len(filtered), len(filtered), full_bytes)]))
     fill_budget = max(0, budget - _byte_len(candidate_footer) - reserve)
 
+    recent = [row for row in ordered if _priority(row)][:frontier]
     included: list[dict[str, Any]] = []
     current = ""
-    for row in ordered:
+    for row in recent + [row for row in ordered if row not in recent]:
         if limit is not None and len(included) >= limit:
             break
         proposed = _render_entries([*included, row])
@@ -405,9 +412,10 @@ def project_slice_with_overflow(
     hint: str = "cli",
     limit: int | None = None,
     query: str | None = None,
+    frontier: int = 0,
 ) -> ProjectionResult:
     """Render the slice AND return structured overflow counts (C-1/F-7)."""
-    markdown = project_slice(db_conn, budget, content_type, role, status, hint, limit, query)
+    markdown = project_slice(db_conn, budget, content_type, role, status, hint, limit, query, frontier)
     terms = _query_terms(query)
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
     superseded_slugs = _superseded_slugs(db_conn)

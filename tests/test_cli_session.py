@@ -115,3 +115,24 @@ def test_session_start_logs_what_it_delivered(tmp_path, capsys):
     assert event["chars"] == len(out)
     assert event["budget"] == project.HOOK_BUDGET
     assert event["omitted"]["project"] > 0
+
+
+def test_session_start_keeps_the_newest_project_memories_when_guidance_fills_it(tmp_path, capsys):
+    # Standing guidance (user/feedback) first used to take the whole hook budget,
+    # crowding out the newest project memories (the handoff a session needs).
+    proj = tmp_path / "proj"; proj.mkdir()
+    derived = paths.memory_dir_for(str(proj), home=tmp_path)
+    derived.mkdir(parents=True)
+    for i in range(60):
+        (derived / f"f{i:03d}.md").write_text(
+            f"---\nname: F{i:03d}\ndescription: {'g' * 150}\nmetadata:\n  type: feedback\n---\nb\n")
+    for day in range(1, 21):
+        (derived / f"p-2026-09-{day:02d}.md").write_text(
+            f"---\nname: P 2026-09-{day:02d}\ndescription: {'w' * 150}\nmetadata:\n  type: project\n---\nb\n")
+    env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
+    assert _run(["session-start"], env) == 0
+    out = capsys.readouterr().out
+    shown = {d for d in range(1, 21) if f"P 2026-09-{d:02d}" in out}
+    assert project.HOOK_FRONTIER > 0 and 20 in shown
+    assert set(range(21 - project.HOOK_FRONTIER, 21)) <= shown
+    assert "feedback memories not shown" in out
