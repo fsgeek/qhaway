@@ -302,3 +302,15 @@ def test_claimless_memory_identical_with_or_without_reground(tmp_path):
     assert without == with_inj
     assert "## Re-grounded claims" not in without
     assert "## Re-grounded claims" not in with_inj
+
+
+def test_superseded_slice_regrounds_link_superseded_claims(tmp_path):
+    # Codex review: #54 made link-superseded memories visible in the superseded
+    # slice, but claim selection still used the stored status, so their claims
+    # were never re-grounded.
+    _write_memory(tmp_path, "old", _claim_fm("old count", "nodes", 3), "frozen\n")
+    _write_memory(tmp_path, "new", "name: new count\ntype: project\nsupersedes: old\n", "b\n")
+    calls = []
+    server.recall(status="superseded", memory_dir=str(tmp_path),
+                  reground=lambda claim: calls.append(claim) or 7)
+    assert len(calls) == 1
