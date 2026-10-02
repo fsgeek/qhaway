@@ -82,3 +82,18 @@ def test_recall_logs_its_query_limit_and_omissions(tmp_path):
     [event] = [json.loads(l) for l in (tmp_path / "events.jsonl").read_text().splitlines()]
     assert (event["query"], event["limit"]) == ("arango", 1)
     assert event["omitted"] == {"project": 2}
+
+
+def test_recall_events_share_a_per_process_session_and_record_the_header(tmp_path, monkeypatch):
+    # Without a session identity, repeated questions within one session can't be
+    # seen; without the header, neither can zero-result recalls.
+    import json
+    from qhaway import server
+    monkeypatch.delenv("QHAWAY_SESSION_ID", raising=False)
+    (tmp_path / "a.md").write_text("---\nname: arango\ntype: project\n---\nb\n")
+    server.recall(query="arango", memory_dir=str(tmp_path))
+    server.recall(query="nothing-matches", memory_dir=str(tmp_path))
+    first, second = [json.loads(l) for l in (tmp_path / "events.jsonl").read_text().splitlines()]
+    assert first["session_id"] and first["session_id"] == second["session_id"]
+    assert first["header"] == "1 matching memory; all shown."
+    assert second["header"] == "No matching memories."
