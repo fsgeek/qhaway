@@ -32,7 +32,7 @@ def parse_memory_file(filepath: str) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     metadata, body, parse_warning = _split_frontmatter(text)
     name = _string_or_none(metadata.get("name"))
-    content_type = _string_or_none(metadata.get("type"))
+    content_type = _string_or_none(metadata.get("type")) or _nested_type(metadata)
     origin_session = _origin_session(metadata)
     date_hint = _date_hint(path.stem, metadata)
 
@@ -157,6 +157,14 @@ def _tolerant_frontmatter(raw_frontmatter: str) -> dict[str, str]:
         if key:
             metadata[key] = value.strip().strip("\"'")
     return metadata
+
+
+def _nested_type(metadata: dict[str, Any]) -> str | None:
+    """Claude Code writes `type` under a `metadata:` mapping."""
+    nested = metadata.get("metadata")
+    if isinstance(nested, dict):
+        return _string_or_none(nested.get("type"))
+    return None
 
 
 def _origin_session(metadata: dict[str, Any]) -> str | None:

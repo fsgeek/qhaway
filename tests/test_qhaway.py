@@ -1771,3 +1771,37 @@ def test_unit_slugify_cap_preserves_a_trailing_date_stem(temp_memory_dir):
     s = reconcile.slugify(long_dated)
     assert s.endswith("2026-08-25")
     assert parse._date_hint(s, {}) == "20260825"   # dashed dates normalize to joined form
+
+
+def test_type_nested_under_metadata_is_read(tmp_path):
+    # Claude Code writes `metadata:\n  type: feedback`; read only at the top
+    # level, its feedback and user memories were filed as untyped (project).
+    from qhaway.parse import parse_memory_file
+    f = tmp_path / "m.md"
+    f.write_text("---\nname: m\ndescription: d\nmetadata:\n  node_type: memory\n  type: feedback\n---\nb\n")
+    assert parse_memory_file(str(f))["content_type"] == "feedback"
+
+
+def test_top_level_type_wins_over_nested(tmp_path):
+    from qhaway.parse import parse_memory_file
+    f = tmp_path / "m.md"
+    f.write_text("---\nname: m\ntype: user\nmetadata:\n  type: project\n---\nb\n")
+    assert parse_memory_file(str(f))["content_type"] == "user"
+
+
+def test_index_from_before_nested_types_is_rebuilt(tmp_path):
+    # Reconcile reparses only files whose mtime/size changed, so an index built
+    # before nested `metadata: type:` was read keeps files untyped unless the
+    # version bump forces a rebuild.
+    from qhaway import model
+    from qhaway.reconcile import reconcile
+    (tmp_path / "m.md").write_text("---\nname: m\nmetadata:\n  type: feedback\n---\nb\n")
+    reconcile(str(tmp_path))
+    conn = model.get_connection(str(tmp_path))
+    conn.execute("UPDATE nodes SET content_type = NULL")
+    conn.execute("PRAGMA user_version = 3")  # 0.7.2's version, which ignored the nested type
+    conn.commit(); conn.close()
+    reconcile(str(tmp_path))
+    conn = model.get_connection(str(tmp_path))
+    assert conn.execute("SELECT content_type FROM nodes").fetchone()[0] == "feedback"
+    conn.close()
