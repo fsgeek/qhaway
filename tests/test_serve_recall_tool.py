@@ -97,3 +97,15 @@ def test_recall_events_share_a_per_process_session_and_record_the_header(tmp_pat
     assert first["session_id"] and first["session_id"] == second["session_id"]
     assert first["header"] == "1 matching memory; all shown."
     assert second["header"] == "No matching memories."
+
+
+def test_remember_stamps_the_date_it_was_written(tmp_path):
+    # Recency is the cheapest filter, but a memory without a date in its title
+    # had no date at all and sorted after every dated one (73% of one machine's
+    # memories).
+    import datetime
+    from qhaway import parse, server
+    name = server.remember(type="project", title="no date in this title", body="b",
+                           memory_dir=str(tmp_path))
+    node = parse.parse_memory_file(str(tmp_path / name))
+    assert node["date_hint"] == datetime.date.today().strftime("%Y%m%d")
