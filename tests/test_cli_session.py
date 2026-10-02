@@ -138,3 +138,12 @@ def test_session_start_keeps_the_newest_project_memories_when_guidance_fills_it(
     assert project.HOOK_FRONTIER > 0 and 20 in shown
     assert set(range(21 - project.HOOK_FRONTIER, 21)) <= shown
     assert "feedback memories not shown" in out
+
+
+def test_events_record_the_qhaway_version(tmp_path, capsys):
+    # The usage report counts only events carrying a version, so events from
+    # before the pre-registration can't leak into its cohort.
+    import qhaway
+    derived, env = _overflowing_store(tmp_path)
+    assert _run(["session-start"], env) == 0
+    assert all(e["version"] == qhaway.__version__ for e in _events(derived))
