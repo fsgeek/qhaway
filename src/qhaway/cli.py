@@ -57,6 +57,10 @@ def main(args: list[str] | None = None) -> int:
         return _setup_cmd(ns.command)
 
     directory = _resolve_dir(ns)
+    if directory is None:
+        sys.stderr.write("no memory directory: pass --dir /path/to/memory "
+                         "(there is no ~/.claude to derive one from)\n")
+        return 2
 
     if ns.command == "serve":
         return _serve(directory, ns.budget if ns.inline_index else None)
@@ -177,12 +181,14 @@ def _session(which: str) -> int:
     return _exit(directory, project.DEFAULT_BUDGET)
 
 
-def _resolve_dir(ns, environ=None, home=None, cwd=None) -> str:
+def _resolve_dir(ns, environ=None, home=None, cwd=None) -> str | None:
     """Resolve the memory dir. Explicit --dir wins, then QHAWAY_MEMORY_DIR, then
     the slug dir derived from CLAUDE_PROJECT_DIR (so serve, session-start, and
     session-end all land on the same per-project dir), then the slug dir derived
     from the cwd — an interactive `qhaway index` run inside a project must reach
-    that project's store, never index the project's own markdown as memories."""
+    that project's store, never index the project's own markdown as memories.
+    None when only the cwd fallback is left and there is no ~/.claude: that user
+    doesn't run Claude Code, so there is no store to derive."""
     environ = os.environ if environ is None else environ
     if ns.dir:
         return ns.dir
@@ -191,6 +197,9 @@ def _resolve_dir(ns, environ=None, home=None, cwd=None) -> str:
     derived = paths.derive_from_env(environ, home=home)
     if derived is not None:
         return str(derived)
+    home = Path.home() if home is None else home
+    if not (home / ".claude").is_dir():
+        return None
     cwd = os.getcwd() if cwd is None else cwd
     return str(paths.resolve(cwd, home=home))
 
