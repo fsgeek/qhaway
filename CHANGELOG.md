@@ -10,6 +10,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ### Fixed
 
+- The session-start index now fits Claude Code's 10,000-character limit on hook output ([#46](https://github.com/fsgeek/qhaway/issues/46)). It was sized for the ~24KB `MEMORY.md` loader, so on any store that overflowed, Claude Code saved it to a file and showed the model a 2,000-character preview without the omissions footer or the `recall` pointers. Session-start and `reconcile --emit` (the plugin's hook) now use a 9,000-byte budget; `--budget` still overrides `--emit`.
 - The uninstall command `init` prints, and the README's, now include `--isolated`. Without it, `uvx` runs an installed qhaway tool's own (possibly older) `uninstall`, which may not recognize the commands a newer `init` wrote.
 - An older qhaway no longer deletes the index a newer qhaway wrote ([#37](https://github.com/fsgeek/qhaway/issues/37)). A schema mismatch used to mean "delete and rebuild" in both directions, so two versions sharing a store took turns destroying each other's index. Now a newer-than-known index is left untouched: the older version reads the topic files into an in-memory index for that call and prints a one-time notice suggesting an upgrade. An older index is still rebuilt. This protects indexes written by releases after this one.
 
