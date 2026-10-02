@@ -8,7 +8,7 @@ import time
 import uuid
 from pathlib import Path
 
-from qhaway import cli, model, project, reconcile
+from qhaway import __version__, cli, model, project, reconcile
 
 VALID_TYPES = {"user", "feedback", "project", "reference"}
 _MAX_SUFFIX = 100
@@ -24,6 +24,7 @@ def _emit(root: Path, event: dict) -> None:
     Metadata only — never the body. Observability must never break a verb, so
     failures here are swallowed. See [[single-writer-summons-consensus]]."""
     event.setdefault("ts", time.time())
+    event.setdefault("version", __version__)
     event.setdefault("session_id", os.environ.get("QHAWAY_SESSION_ID") or _PROCESS_SESSION)
     line = json.dumps(event, separators=(",", ":")) + "\n"
     try:
@@ -113,10 +114,13 @@ def _claim_nodes(conn, content_type, role, status) -> list[dict]:
     must respect the recall filter (type/role/status), not leak claims from
     memories outside the projected set. Normalizes content_type/status the way the
     projection does (project._normalize_row) so the two slices agree exactly."""
+    superseded_slugs = project._superseded_slugs(conn)
     return [
         node for node in model.fetch_nodes(conn)
         if node.get("claim")
-        and (node.get("status") or "live") == status
+        and project._effective_status(
+            {"file": node["file"], "status": node.get("status") or "live"}, superseded_slugs
+        ) == status
         and (content_type is None or (node.get("content_type") or "project") == content_type)
         and (role is None or node.get("role") == role)
     ]

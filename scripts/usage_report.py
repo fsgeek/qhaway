@@ -27,6 +27,8 @@ def load(dirs):
                     e = json.loads(line)
                 except ValueError:
                     continue
+                if "version" not in e:  # before the registration (qhaway 0.7.3)
+                    continue
                 if e.get("verb") == "recall" and "header" in e:
                     recalls.append(e)
                 elif e.get("verb") == "session-start":

@@ -7,7 +7,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 ### Added
 
 - `qhaway --version`.
-- The local event log (`events.jsonl` in the memory directory, metadata only) now records each session-start delivery (characters, budget, and the memories left out, by type), and records `recall`'s `query`, `limit`, left-out counts and first line (so a recall that found nothing is visible). Events from one MCP server process share a session id, so repeated questions within a session can be seen. These are the measurements that would have shown [#46](https://github.com/fsgeek/qhaway/issues/46), and that should guide what session-start carries. Nothing leaves the machine.
+- The local event log (`events.jsonl` in the memory directory, metadata only) now records each session-start delivery (characters, budget, and the memories left out, by type), and records `recall`'s `query`, `limit`, left-out counts and first line (so a recall that found nothing is visible). Events from one MCP server process share a session id, so repeated questions within a session can be seen, and every event records qhaway's version. These are the measurements that would have shown [#46](https://github.com/fsgeek/qhaway/issues/46), and that should guide what session-start carries. Nothing leaves the machine.
 
 ### Changed
 
@@ -16,7 +16,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ### Fixed
 
-- `recall(status="superseded")` and `qhaway index --status superseded` now return memories superseded by a newer memory's `supersedes:` link, which is how `remember` supersedes. Before, the live index's footer counted them as hidden and pointed at that call, but the call returned only memories whose own `status:` said superseded. On one real store it returned 1 of the 15 the footer promised.
+- `recall(status="superseded")` and `qhaway index --status superseded` now return memories superseded by a newer memory's `supersedes:` link, which is how `remember` supersedes. Before, the live index's footer counted them as hidden and pointed at that call, but the call returned only memories whose own `status:` said superseded. On one real store it returned 1 of the 15 the footer promised. Claims on those memories are re-grounded in that slice too.
 - Memories whose `type` is nested under `metadata:` (the frontmatter Claude Code writes) are now typed correctly. qhaway read only a top-level `type:`, so these feedback, user and reference memories were indexed as project memories: they lost their section and their priority, and were the first to be dropped when the index overflowed. On one real store, 17 of 29 feedback memories had been misfiled. The index version is now 4, so existing indexes are rebuilt once to reclassify unchanged files.
 - The session-start index now fits Claude Code's 10,000-character limit on hook output ([#46](https://github.com/fsgeek/qhaway/issues/46)). It was sized for the ~24KB `MEMORY.md` loader, so on any store that overflowed, Claude Code saved it to a file and showed the model a 2,000-character preview without the omissions footer or the `recall` pointers. Session-start and `reconcile --emit` (the plugin's hook) now use a 9,000-byte budget; `--budget` still overrides `--emit`. Both log their deliveries.
 - The uninstall command `init` prints, and the README's, now include `--isolated`. Without it, `uvx` runs an installed qhaway tool's own (possibly older) `uninstall`, which may not recognize the commands a newer `init` wrote.

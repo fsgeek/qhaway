@@ -14,9 +14,11 @@ interesting findings are likely to be in the gap between expected and actual.
 
 - **Source:** `events.jsonl` in every memory directory on Tony's WSL machine
   (`~/.claude/projects/*/memory`, `~/.qhaway/projects/*/memory`).
-- **Events counted:** `recall` events with a `header` field, and
-  `session-start` events, from the first day such events exist (qhaway 0.7.3).
-  Older events lack these fields and are excluded.
+- **Events counted:** events carrying a `version` field (written by qhaway
+  0.7.3 and later): `recall` events with a `header` field, and `session-start`
+  events. Older events are excluded. (Amended 2026-10-02, before any 0.7.3
+  event existed: the first draft let session-start events from development
+  builds into the cohort. Found in an independent review.)
 - **Session:** a `recall` event's `session_id`, one per MCP server process.
   Claude Code starts one server per session. Session-start runs in the hook's
   own process, so it can't be joined to a server session by id. P1 therefore
