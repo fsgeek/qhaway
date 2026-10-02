@@ -1817,3 +1817,19 @@ def test_superseded_slice_shows_what_the_live_footer_hides(tmp_path):
     assert "+1 superseded memories hidden" in live and "old plan" not in live
     hidden = server.recall(status="superseded", memory_dir=str(tmp_path))
     assert "old plan" in hidden and "new plan" not in hidden
+
+
+def test_dates_normalize_to_utc_and_order_with_date_only_hints(tmp_path):
+    # Tony: normalize to UTC. An offset timestamp names the UTC instant; a bare
+    # date still orders before any timestamp on the same day.
+    from qhaway.parse import parse_memory_file
+    def hint(stem, date):
+        f = tmp_path / f"{stem}.md"
+        f.write_text(f"---\nname: {stem}\ndate: '{date}'\n---\nb\n")
+        return parse_memory_file(str(f))["date_hint"]
+    late_vancouver = hint("a", "2026-10-01T23:30:00-07:00")
+    assert late_vancouver == "20261002T063000Z"
+    assert hint("b", "2026-10-02") < late_vancouver < hint("c", "2026-10-02T07:00:00Z")
+    unquoted = tmp_path / "d.md"  # YAML parses this into a datetime, not a string
+    unquoted.write_text("---\nname: d\ndate: 2026-10-01T23:30:00-07:00\n---\nb\n")
+    assert parse_memory_file(str(unquoted))["date_hint"] == late_vancouver
