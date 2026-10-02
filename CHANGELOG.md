@@ -4,6 +4,10 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ## [Unreleased]
 
+### Added
+
+- The local event log (`events.jsonl` in the memory directory, metadata only) now records each session-start delivery (characters, budget, and the memories left out, by type), and records `recall`'s `query`, `limit` and left-out counts. These are the measurements that would have shown [#46](https://github.com/fsgeek/qhaway/issues/46), and that should guide what session-start carries. Nothing leaves the machine.
+
 ### Changed
 
 - Without `--dir`, `QHAWAY_MEMORY_DIR` or Claude Code's `CLAUDE_PROJECT_DIR`, commands such as `serve` used to derive a store under `~/.claude` from the current directory, creating it if needed. When there is no `~/.claude` (the user doesn't run Claude Code, e.g. `serve` under OpenCode), they now exit with status 2 and ask for `--dir` instead of putting memory inside another tool's directory.
