@@ -4,6 +4,10 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ## [Unreleased]
 
+### Changed
+
+- Without `--dir`, `QHAWAY_MEMORY_DIR` or Claude Code's `CLAUDE_PROJECT_DIR`, commands such as `serve` used to derive a store under `~/.claude` from the current directory, creating it if needed. When there is no `~/.claude` (the user doesn't run Claude Code, e.g. `serve` under OpenCode), they now exit with status 2 and ask for `--dir` instead of putting memory inside another tool's directory.
+
 ### Fixed
 
 - An older qhaway no longer deletes the index a newer qhaway wrote ([#37](https://github.com/fsgeek/qhaway/issues/37)). A schema mismatch used to mean "delete and rebuild" in both directions, so two versions sharing a store took turns destroying each other's index. Now a newer-than-known index is left untouched: the older version reads the topic files into an in-memory index for that call and prints a one-time notice suggesting an upgrade. An older index is still rebuilt. This protects indexes written by releases after this one.

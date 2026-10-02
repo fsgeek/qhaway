@@ -31,7 +31,7 @@ def test_paths_from_env_derives_slug_dir():
     assert got == HOME / ".claude/projects/-home-tony-projects-qhaway/memory"
 
 
-def _resolve(argv, environ, cwd="/home/tony/projects/qhaway"):
+def _resolve(argv, environ, cwd="/home/tony/projects/qhaway", home=HOME):
     # Parse args the way main() does, then resolve, without running the command.
     import argparse
 
@@ -48,7 +48,7 @@ def _resolve(argv, environ, cwd="/home/tony/projects/qhaway"):
         p.add_argument("--check", action="store_true")
         p.add_argument("--emit", action="store_true")
     parsed = parser.parse_args(argv)
-    return cli._resolve_dir(parsed, environ=environ, home=HOME, cwd=cwd)
+    return cli._resolve_dir(parsed, environ=environ, home=home, cwd=cwd)
 
 
 def test_serve_with_no_dir_resolves_to_slug_dir():
@@ -71,13 +71,31 @@ def test_explicit_dir_still_wins_over_derivation():
     assert got == "/tmp/explicit"
 
 
-def test_interactive_cwd_maps_through_slug_rule_not_used_as_store():
+def test_interactive_cwd_maps_through_slug_rule_not_used_as_store(tmp_path):
     # No --dir, no QHAWAY_MEMORY_DIR, no CLAUDE_PROJECT_DIR: an interactive
     # `qhaway index` run from a project dir must resolve that project's slug
     # dir — never treat the project itself as the store, which silently
     # indexes the repo's own markdown (CLAUDE.md, README.md) as memories.
-    got = _resolve(["index"], {}, cwd="/home/tony/projects/yupi")
-    assert got == str(HOME / ".claude/projects/-home-tony-projects-yupi/memory")
+    (tmp_path / ".claude").mkdir()
+    got = _resolve(["index"], {}, cwd="/home/tony/projects/yupi", home=tmp_path)
+    assert got == str(tmp_path / ".claude/projects/-home-tony-projects-yupi/memory")
+
+
+def test_cwd_fallback_resolves_nothing_without_a_claude_home(tmp_path):
+    # Without ~/.claude the user doesn't run Claude Code (e.g. serve under
+    # OpenCode): don't invent a store inside another tool's directory.
+    assert _resolve(["serve"], {}, cwd="/home/tony/projects/yupi", home=tmp_path) is None
+
+
+def test_serve_without_dir_or_claude_home_fails_and_names_dir(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    for var in ("QHAWAY_MEMORY_DIR", "CLAUDE_PROJECT_DIR"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["serve"]) == 2
+    assert "--dir" in capsys.readouterr().err
+    assert not (tmp_path / ".claude").exists()
 
 
 def test_has_memory_false_when_absent(tmp_path):

@@ -211,7 +211,8 @@ OpenCode, in `opencode.json`:
 
 - **Pass `--dir`.** Without it, `serve` uses Claude Code's memory directory for
   the current project (`~/.claude/projects/<slug>/memory`). That is the right
-  choice only if you want to share memory with Claude Code.
+  choice only if you want to share memory with Claude Code. With no
+  `~/.claude` at all, `serve` exits and asks for `--dir`.
 - **Raise the startup timeout.** The first run may download Python 3.14 and
   qhaway's dependencies, which takes longer than OpenCode's 5-second default.
 - **Tell the agent to use it.** Without a session-start hook, nothing is loaded
