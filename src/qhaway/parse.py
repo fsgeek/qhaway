@@ -199,7 +199,15 @@ def _normalize_date(value: str) -> str:
     dashed = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", value)
     if dashed:
         return "".join(dashed.groups())
-    return value
+    # A timestamp with a zone orders as its UTC instant, YYYYMMDDTHHMMSSZ, which
+    # sorts after a bare YYYYMMDD on the same day.
+    try:
+        moment = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if moment.tzinfo is None:
+        return value
+    return moment.astimezone(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _role(stem: str) -> str | None:

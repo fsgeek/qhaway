@@ -114,9 +114,11 @@ def compose_frontmatter(type: str, title: str, description: str | None,
                         supersedes: list[str] | None = None,
                         retracts: list[str] | None = None,
                         retracted_claim: str | None = None) -> str:
-    # The write date is content, so ordering by it keeps the index a pure
-    # function of the files (mtime never orders it).
-    data = {"name": title, "type": type, "date": datetime.now().date().isoformat()}
+    # The write time is content, so ordering by it keeps the index a pure
+    # function of the files (mtime never orders it). UTC with an explicit zone:
+    # orders as text everywhere, and ArangoDB requires the zone.
+    data = {"name": title, "type": type,
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     if description is not None:
         data["description"] = description
     if supersedes:
