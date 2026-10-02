@@ -1805,3 +1805,15 @@ def test_index_from_before_nested_types_is_rebuilt(tmp_path):
     conn = model.get_connection(str(tmp_path))
     assert conn.execute("SELECT content_type FROM nodes").fetchone()[0] == "feedback"
     conn.close()
+
+
+def test_superseded_slice_shows_what_the_live_footer_hides(tmp_path):
+    # The live footer counts link-superseded memories as hidden and points at
+    # status="superseded"; that slice must return them, or the pointer is a dead end.
+    from qhaway import server
+    (tmp_path / "old.md").write_text("---\nname: old plan\ntype: project\n---\nb\n")
+    (tmp_path / "new.md").write_text("---\nname: new plan\ntype: project\nsupersedes: old\n---\nb\n")
+    live = server.recall(memory_dir=str(tmp_path))
+    assert "+1 superseded memories hidden" in live and "old plan" not in live
+    hidden = server.recall(status="superseded", memory_dir=str(tmp_path))
+    assert "old plan" in hidden and "new plan" not in hidden
