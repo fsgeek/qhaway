@@ -107,9 +107,14 @@ def main(args: list[str] | None = None) -> int:
         conn = model.get_connection(directory)
         try:
             budget = project.HOOK_BUDGET if explicit_budget is None else explicit_budget
-            sys.stdout.write(project.project_slice(conn, budget=budget, frontier=project.HOOK_FRONTIER))
+            result = project.project_slice_with_overflow(
+                conn, budget=budget, frontier=project.HOOK_FRONTIER)
         finally:
             conn.close()
+        sys.stdout.write(result.markdown)
+        # The plugin's SessionStart hook delivers through here.
+        server._emit(Path(directory), {"verb": "session-start", "chars": len(result.markdown),
+                                       "budget": budget, "omitted": result.overflow.omitted_counts})
     return 0
 
 
