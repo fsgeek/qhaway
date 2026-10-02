@@ -51,7 +51,7 @@ the wheel smoke test below to exercise the new server rather than published 0.6.
 Remove the managed connection from that project with:
 
 ```sh
-uvx qhaway uninstall --host codex
+uvx --isolated qhaway uninstall --host codex
 ```
 
 Restart Codex to disconnect. Topic files, generated indexes, other MCP servers,

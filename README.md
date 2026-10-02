@@ -70,7 +70,7 @@ Then **restart Claude Code.** qhaway wires itself in at user scope — both the
 boot hooks (which deliver your memory at session start) and the `recall` /
 `remember` MCP tools — and activates in any project that already has memory;
 projects without memory are untouched. No clone, no per-project setup. To remove
-it: `uvx qhaway uninstall` (your `MEMORY.md` files are left in place).
+it: `uvx --isolated qhaway uninstall` (your `MEMORY.md` files are left in place).
 
 (Requires [`uv`](https://docs.astral.sh/uv/) — `uvx` fetches qhaway and a
 managed Python on first use.)
