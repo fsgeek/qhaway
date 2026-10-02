@@ -2,7 +2,7 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
-## [Unreleased]
+## [0.7.3] - 2026-10-02
 
 ### Added
 
@@ -236,6 +236,7 @@ Initial release. Requires Python 3.14 or later.
 - `qhaway serve` runs an MCP server with two tools: `recall` (read the budgeted projection) and `remember` (write a topic file, then reconcile). In this mode `MEMORY.md` becomes a read-only redirect.
 - Other commands: `reconcile`, `check` (broken links, orphaned backups, overflow) and `exit`.
 
+[0.7.3]: https://github.com/fsgeek/qhaway/releases/tag/v0.7.3
 [0.7.2]: https://github.com/fsgeek/qhaway/releases/tag/v0.7.2
 [0.7.1]: https://github.com/fsgeek/qhaway/releases/tag/v0.7.1
 [0.7.0]: https://github.com/fsgeek/qhaway/releases/tag/v0.7.0
