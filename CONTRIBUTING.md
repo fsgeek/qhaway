@@ -14,7 +14,7 @@ that keep that focus are the easiest to accept.
 
 ## Setup
 
-qhaway is [`uv`](https://docs.astral.sh/uv/)-managed and targets Python 3.14.
+qhaway is [`uv`](https://docs.astral.sh/uv/)-managed and supports Python 3.12 and newer.
 
 ```sh
 git clone https://github.com/fsgeek/qhaway
