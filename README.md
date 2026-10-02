@@ -179,11 +179,11 @@ writer updates it via atomic temp-file + replace.
 
 ## Local Codex
 
-Codex support is available on this branch for the next release:
+Codex support shipped in 0.7.0:
 
 ```sh
-qhaway init --host codex       # project-local connection, independent memory store
-qhaway uninstall --host codex  # disconnect; preserve memories
+uvx --isolated qhaway init --host codex       # project-local connection, independent memory store
+uvx --isolated qhaway uninstall --host codex  # disconnect; preserve memories
 ```
 
 Use `--dir /path/to/memory` to share an existing curated store, and `--project`
@@ -191,6 +191,35 @@ to select a project other than the current directory. Restart Codex after setup.
 See [Codex setup and pilot findings](docs/codex-memory.md) for details and the
 manual configuration that already works with published 0.6.0. Native Codex
 memory and Claude are not required; plain `qhaway init` still targets Claude.
+
+## Other MCP hosts (OpenCode and the like)
+
+Any host that runs stdio MCP servers can reach `recall` and `remember`. For
+OpenCode, in `opencode.json`:
+
+```json
+"mcp": {
+  "qhaway": {
+    "type": "local",
+    "command": ["uvx", "--isolated", "--python", "3.14", "qhaway", "serve",
+                "--dir", "/absolute/path/to/memory"],
+    "enabled": true,
+    "timeout": 30000
+  }
+}
+```
+
+- **Pass `--dir`.** Without it, `serve` uses Claude Code's memory directory for
+  the current project (`~/.claude/projects/<slug>/memory`). That is the right
+  choice only if you want to share memory with Claude Code.
+- **Raise the startup timeout.** The first run may download Python 3.14 and
+  qhaway's dependencies, which takes longer than OpenCode's 5-second default.
+- **Tell the agent to use it.** Without a session-start hook, nothing is loaded
+  automatically; the agent sees memory only when it calls `recall`. A line in
+  `AGENTS.md` does it: *"Before reconstructing past decisions, call qhaway's
+  `recall`; record durable lessons with `remember`."*
+- An empty store returns nothing useful. The value comes from what gets
+  written into it.
 
 ## Hookless hosts (Claude Desktop / Cowork)
 
