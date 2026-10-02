@@ -21,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("reconcile", "check", "serve", "index", "exit"):
         p = sub.add_parser(name)
         p.add_argument("--dir")
-        p.add_argument("--budget", type=int, default=project.DEFAULT_BUDGET)
+        p.add_argument("--budget", type=int)  # default: DEFAULT_BUDGET; HOOK_BUDGET for --emit
         p.add_argument("--type", dest="content_type")
         p.add_argument("--role")
         # default None, NOT "live": the index dispatch must see whether the user
@@ -49,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(args: list[str] | None = None) -> int:
     parser = build_parser()
     ns = parser.parse_args(args)
+    explicit_budget = getattr(ns, "budget", None)
+    if explicit_budget is None and hasattr(ns, "budget"):
+        ns.budget = project.DEFAULT_BUDGET
 
     if ns.command in ("session-start", "session-end"):
         return _session(ns.command)
@@ -103,7 +106,8 @@ def main(args: list[str] | None = None) -> int:
     if getattr(ns, "emit", False):
         conn = model.get_connection(directory)
         try:
-            sys.stdout.write(project.project_slice(conn, budget=ns.budget))
+            budget = project.HOOK_BUDGET if explicit_budget is None else explicit_budget
+            sys.stdout.write(project.project_slice(conn, budget=budget))
         finally:
             conn.close()
     return 0
@@ -178,7 +182,7 @@ def _session(which: str) -> int:
         reconcile(directory)
         conn = model.get_connection(directory)
         try:
-            sys.stdout.write(project.project_slice(conn, budget=project.DEFAULT_BUDGET, hint="tool"))
+            sys.stdout.write(project.project_slice(conn, budget=project.HOOK_BUDGET, hint="tool"))
         finally:
             conn.close()
         return 0

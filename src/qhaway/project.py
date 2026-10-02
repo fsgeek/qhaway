@@ -11,6 +11,11 @@ from qhaway.reconcile import slugify
 
 
 DEFAULT_BUDGET = 24_000
+# What a SessionStart hook can hand the model. Claude Code puts hook output in
+# context only up to roughly 10,000 characters; above that the model sees a short
+# preview of the beginning and a file path, so the omissions footer is lost
+# (#46: 9,890 characters arrived inline, 12.6KB did not).
+HOOK_BUDGET = 9_000
 KNOWN_TYPES = ("user", "feedback", "project", "reference")
 FOOTER_TYPES = KNOWN_TYPES
 ENTRY_SEPARATOR = "\n"
