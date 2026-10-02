@@ -123,7 +123,7 @@ def _codex_setup_cmd(which: str, project_dir: str | None, memory_dir: str | None
         sys.stdout.write(
             f"        Curated memory: {store}\n"
             "        Restart Codex in this trusted project; check /mcp, then recall(limit=0).\n"
-            "        Remove here with: uvx qhaway uninstall --host codex\n"
+            "        Remove here with: uvx --isolated qhaway uninstall --host codex\n"
             "        This writes machine-local .codex/config.toml; keep personal paths out of commits.\n"
         )
     else:
@@ -150,7 +150,7 @@ def _setup_cmd(which: str) -> int:
                 "        It activates in any project that has memory;\n"
                 "        projects without memory are untouched.\n"
                 "        Restart Claude Code for the MCP server to load.\n"
-                "        Remove with: uvx qhaway uninstall\n"
+                "        Remove with: uvx --isolated qhaway uninstall\n"
             )
         return 0
     result = setup_mod.uninstall(settings_path, mcp_config_path=mcp_config_path)
