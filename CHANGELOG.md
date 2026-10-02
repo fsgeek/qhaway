@@ -2,6 +2,12 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [Unreleased]
+
+### Changed
+
+- `remember` writes the date (`date: YYYY-MM-DD`) into each new memory's frontmatter. Ordering by recency used only dates found in titles or filenames, so memories without one sorted after every dated memory; on one machine that was 1,224 of 1,686. Existing memories are unchanged.
+
 ## [0.7.3] - 2026-10-02
 
 ### Added

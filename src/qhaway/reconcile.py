@@ -114,7 +114,9 @@ def compose_frontmatter(type: str, title: str, description: str | None,
                         supersedes: list[str] | None = None,
                         retracts: list[str] | None = None,
                         retracted_claim: str | None = None) -> str:
-    data = {"name": title, "type": type}
+    # The write date is content, so ordering by it keeps the index a pure
+    # function of the files (mtime never orders it).
+    data = {"name": title, "type": type, "date": datetime.now().date().isoformat()}
     if description is not None:
         data["description"] = description
     if supersedes:
