@@ -71,3 +71,14 @@ def test_recall_superseded_hint_names_recall(tmp_path):
     assert "superseded memories hidden" in text
     assert 'recall(status="superseded")' in text
     assert "qhaway index" not in text
+
+
+def test_recall_logs_its_query_limit_and_omissions(tmp_path):
+    import json
+    from qhaway import server
+    for i in range(3):
+        (tmp_path / f"t{i}.md").write_text(f"---\nname: arango {i}\nmetadata:\n  type: project\n---\nb\n")
+    server.recall(query="arango", limit=1, memory_dir=str(tmp_path))
+    [event] = [json.loads(l) for l in (tmp_path / "events.jsonl").read_text().splitlines()]
+    assert (event["query"], event["limit"]) == ("arango", 1)
+    assert event["omitted"] == {"project": 2}
