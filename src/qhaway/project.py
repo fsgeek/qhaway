@@ -57,8 +57,7 @@ def project_slice(
     filtered = [
         row
         for row in rows
-        if row["status"] == status
-        and not _is_link_superseded(row, superseded_slugs, status)
+        if _effective_status(row, superseded_slugs) == status
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
         and _matches(row, terms)
@@ -66,11 +65,8 @@ def project_slice(
     hidden_superseded = [
         row
         for row in rows
-        if (
-            row["status"] == "superseded"
-            or _is_link_superseded(row, superseded_slugs, status)
-        )
-        and status == "live"
+        if status == "live"
+        and _effective_status(row, superseded_slugs) == "superseded"
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
         and _matches(row, terms)
@@ -186,16 +182,13 @@ def _attach_retractions(db_conn: Any, rows: list[dict[str, Any]]) -> None:
         row["retractions"] = by_slug.get(slugify(str(row["file"]).removesuffix(".md")), [])
 
 
-def _is_link_superseded(row: dict[str, Any], superseded_slugs: set[str], status: str) -> bool:
-    """A live node is link-superseded if something points a SUPERSEDES edge at it.
-
-    Only demotes within a live slice — a node explicitly requested by
-    status=superseded is shown as asked, never re-hidden.
-    """
-    if status != "live":
-        return False
+def _effective_status(row: dict[str, Any], superseded_slugs: set[str]) -> str:
+    """A live node that something points a SUPERSEDES edge at counts as
+    superseded: hidden from the live slice and shown in the superseded one."""
     stem = str(row["file"]).removesuffix(".md")
-    return slugify(stem) in superseded_slugs
+    if row["status"] == "live" and slugify(stem) in superseded_slugs:
+        return "superseded"
+    return row["status"]
 
 
 def _normalize_row(values: dict[str, Any]) -> dict[str, Any]:
@@ -422,8 +415,7 @@ def project_slice_with_overflow(
     filtered = [
         row
         for row in rows
-        if row["status"] == status
-        and not _is_link_superseded(row, superseded_slugs, status)
+        if _effective_status(row, superseded_slugs) == status
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
         and _matches(row, terms)
@@ -438,11 +430,8 @@ def project_slice_with_overflow(
     superseded_count = sum(
         1
         for row in rows
-        if (
-            row["status"] == "superseded"
-            or _is_link_superseded(row, superseded_slugs, status)
-        )
-        and status == "live"
+        if status == "live"
+        and _effective_status(row, superseded_slugs) == "superseded"
         and (content_type is None or row["content_type"] == content_type)
         and (role is None or row["role"] == role)
         and _matches(row, terms)
