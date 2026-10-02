@@ -182,9 +182,14 @@ def _session(which: str) -> int:
         reconcile(directory)
         conn = model.get_connection(directory)
         try:
-            sys.stdout.write(project.project_slice(conn, budget=project.HOOK_BUDGET, hint="tool"))
+            result = project.project_slice_with_overflow(conn, budget=project.HOOK_BUDGET, hint="tool")
         finally:
             conn.close()
+        sys.stdout.write(result.markdown)
+        # What reached the hook channel, against its budget: the record #46 lacked.
+        server._emit(memory_dir, {"verb": "session-start", "chars": len(result.markdown),
+                                  "budget": project.HOOK_BUDGET,
+                                  "omitted": result.overflow.omitted_counts})
         return 0
     return _exit(directory, project.DEFAULT_BUDGET)
 

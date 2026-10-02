@@ -98,7 +98,8 @@ def recall(type=None, role=None, status="live", memory_dir=".", reground=None, l
     if claims:
         markdown = markdown.rstrip() + "\n\n" + _render_regroundings(claims, reground) + "\n"
     _emit(root, {"verb": "recall", "type": type, "role": role, "status": status,
-                 "result_chars": len(markdown)})
+                 "query": query, "limit": limit, "result_chars": len(markdown),
+                 "omitted": result.overflow.omitted_counts})
     return markdown
 
 

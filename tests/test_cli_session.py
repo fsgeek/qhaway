@@ -99,3 +99,19 @@ def test_reconcile_emit_honors_an_explicit_budget(tmp_path, capsys):
     derived, _ = _overflowing_store(tmp_path)
     assert _run(["reconcile", "--emit", "--budget", "20000", "--dir", str(derived)], {}) == 0
     assert len(capsys.readouterr().out) > project.HOOK_BUDGET
+
+
+def _events(derived):
+    import json
+    return [json.loads(l) for l in (derived / "events.jsonl").read_text().splitlines()]
+
+
+def test_session_start_logs_what_it_delivered(tmp_path, capsys):
+    # Without this, a delivery over the hook cap was invisible (#46).
+    derived, env = _overflowing_store(tmp_path)
+    assert _run(["session-start"], env) == 0
+    out = capsys.readouterr().out
+    [event] = [e for e in _events(derived) if e["verb"] == "session-start"]
+    assert event["chars"] == len(out)
+    assert event["budget"] == project.HOOK_BUDGET
+    assert event["omitted"]["project"] > 0
