@@ -15,7 +15,7 @@ from qhaway.reconcile import reconcile
 MEMORY_NAME = "MEMORY.md"
 
 
-def main(args: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="qhaway")
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("reconcile", "check", "serve", "index", "exit"):
@@ -43,7 +43,11 @@ def main(args: list[str] | None = None) -> int:
         p.add_argument("--project", help="Codex project directory (default: current directory)")
         if command == "init":
             p.add_argument("--dir", help="Codex curated-memory directory (default: ~/.qhaway/projects/...)")
+    return parser
 
+
+def main(args: list[str] | None = None) -> int:
+    parser = build_parser()
     ns = parser.parse_args(args)
 
     if ns.command in ("session-start", "session-end"):
