@@ -83,7 +83,7 @@ def test_session_start_fits_the_hook_channel_with_its_footer(tmp_path, capsys):
     _, env = _overflowing_store(tmp_path)
     assert _run(["session-start"], env) == 0
     out = capsys.readouterr().out
-    assert len(out) <= project.HOOK_BUDGET
+    assert len(out) <= 10_000  # Claude Code's cap, independent of HOOK_BUDGET
     assert "not shown" in out and 'recall(type="project")' in out
 
 
@@ -92,13 +92,15 @@ def test_reconcile_emit_defaults_to_the_hook_budget(tmp_path, capsys):
     derived, _ = _overflowing_store(tmp_path)
     assert _run(["reconcile", "--emit", "--dir", str(derived)], {}) == 0
     out = capsys.readouterr().out
-    assert len(out) <= project.HOOK_BUDGET and "not shown" in out
+    assert len(out) <= 10_000 and "not shown" in out
+    [event] = [e for e in _events(derived) if e["verb"] == "session-start"]
+    assert event["chars"] == len(out)  # the plugin's deliveries are measured too
 
 
 def test_reconcile_emit_honors_an_explicit_budget(tmp_path, capsys):
     derived, _ = _overflowing_store(tmp_path)
     assert _run(["reconcile", "--emit", "--budget", "20000", "--dir", str(derived)], {}) == 0
-    assert len(capsys.readouterr().out) > project.HOOK_BUDGET
+    assert 10_000 < len(capsys.readouterr().out) <= 20_000
 
 
 def _events(derived):

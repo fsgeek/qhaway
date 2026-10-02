@@ -43,7 +43,7 @@ def _commands(code):
                 if t in _STOP:
                     break
                 argv.append(t)
-            if argv and re.fullmatch(r"[a-z][-a-z]*", argv[0]):
+            if argv and re.fullmatch(r"[A-Za-z][-\w]*", argv[0]):
                 yield argv
 
 
@@ -61,6 +61,11 @@ def test_extractor_finds_the_documented_commands():
     assert len(found) >= 15
     assert "uninstall --host codex" in found
     assert any(c.startswith("serve --dir") and "--inline-index" in c for c in found)
+
+
+def test_a_miscased_subcommand_is_checked_not_skipped():
+    # Codex review: `qhaway Index` fell outside the extractor and went unchecked.
+    assert list(_commands("qhaway Index --check")) == [["Index", "--check"]]
 
 
 @pytest.mark.parametrize("where,argv", _doc_commands(), ids=lambda x: x if isinstance(x, str) else None)
