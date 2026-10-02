@@ -31,7 +31,9 @@ except ImportError:  # Windows: lock one byte of the lock file instead
     def _unlock(handle) -> None:
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
-SCHEMA_VERSION = 3
+# 4: same tables; a rebuild re-reads `type` nested under `metadata:` (Claude
+# Code's form), which reconcile wouldn't reparse in unchanged files.
+SCHEMA_VERSION = 4
 DB_NAME = ".qhaway.db"
 LOCK_NAME = ".qhaway.db.reset.lock"
 _DB_SUFFIXES = ("", "-wal", "-shm")
