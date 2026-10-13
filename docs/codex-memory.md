@@ -9,7 +9,7 @@ not required, and Claude does not need to be installed or running.
 Requires qhaway 0.7.0 or later. From the project you want to equip, run:
 
 ```sh
-uvx qhaway init --host codex
+uvx --isolated qhaway init --host codex
 ```
 
 This adds a managed qhaway entry to `.codex/config.toml` in that project. The
@@ -22,7 +22,7 @@ when first started. Existing global Codex configuration remains unchanged.
 To share an existing curated store or choose its location:
 
 ```sh
-uvx qhaway init --host codex --dir /absolute/path/to/curated-memory
+uvx --isolated qhaway init --host codex --dir /absolute/path/to/curated-memory
 ```
 
 `--project /path/to/project` selects a project from another working directory.
@@ -84,7 +84,7 @@ rather than adding a duplicate. Replace both paths with paths on your machine:
 ```toml
 [mcp_servers.qhaway]
 command = "/absolute/path/to/uvx"
-args = ["--python", "3.14", "--from", "qhaway==0.7.2", "qhaway", "serve", "--dir", "/absolute/path/to/curated-memory"]
+args = ["--python", "3.14", "--from", "qhaway==0.7.3", "qhaway", "serve", "--dir", "/absolute/path/to/curated-memory"]
 startup_timeout_sec = 30
 ```
 

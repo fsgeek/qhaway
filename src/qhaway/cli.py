@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from qhaway import model, parse, paths, project, server
+from qhaway import __version__, model, parse, paths, project, server
 from qhaway import reconcile as reconcile_mod
 from qhaway import setup as setup_mod
 from qhaway.reconcile import reconcile
@@ -17,11 +17,12 @@ MEMORY_NAME = "MEMORY.md"
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="qhaway")
+    parser.add_argument("--version", action="version", version=f"qhaway {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("reconcile", "check", "serve", "index", "exit"):
         p = sub.add_parser(name)
         p.add_argument("--dir")
-        p.add_argument("--budget", type=int, default=project.DEFAULT_BUDGET)
+        p.add_argument("--budget", type=int)  # default: DEFAULT_BUDGET; HOOK_BUDGET for --emit
         p.add_argument("--type", dest="content_type")
         p.add_argument("--role")
         # default None, NOT "live": the index dispatch must see whether the user
@@ -49,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(args: list[str] | None = None) -> int:
     parser = build_parser()
     ns = parser.parse_args(args)
+    explicit_budget = getattr(ns, "budget", None)
+    if explicit_budget is None and hasattr(ns, "budget"):
+        ns.budget = project.DEFAULT_BUDGET
 
     if ns.command in ("session-start", "session-end"):
         return _session(ns.command)
@@ -103,9 +107,15 @@ def main(args: list[str] | None = None) -> int:
     if getattr(ns, "emit", False):
         conn = model.get_connection(directory)
         try:
-            sys.stdout.write(project.project_slice(conn, budget=ns.budget))
+            budget = project.HOOK_BUDGET if explicit_budget is None else explicit_budget
+            result = project.project_slice_with_overflow(
+                conn, budget=budget, frontier=project.HOOK_FRONTIER)
         finally:
             conn.close()
+        sys.stdout.write(result.markdown)
+        # The plugin's SessionStart hook delivers through here.
+        server._emit(Path(directory), {"verb": "session-start", "chars": len(result.markdown),
+                                       "budget": budget, "omitted": result.overflow.omitted_counts})
     return 0
 
 
@@ -178,9 +188,15 @@ def _session(which: str) -> int:
         reconcile(directory)
         conn = model.get_connection(directory)
         try:
-            sys.stdout.write(project.project_slice(conn, budget=project.DEFAULT_BUDGET, hint="tool"))
+            result = project.project_slice_with_overflow(
+                conn, budget=project.HOOK_BUDGET, hint="tool", frontier=project.HOOK_FRONTIER)
         finally:
             conn.close()
+        sys.stdout.write(result.markdown)
+        # What reached the hook channel, against its budget: the record #46 lacked.
+        server._emit(memory_dir, {"verb": "session-start", "chars": len(result.markdown),
+                                  "budget": project.HOOK_BUDGET,
+                                  "omitted": result.overflow.omitted_counts})
         return 0
     return _exit(directory, project.DEFAULT_BUDGET)
 

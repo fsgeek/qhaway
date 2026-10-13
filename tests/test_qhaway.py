@@ -1771,3 +1771,65 @@ def test_unit_slugify_cap_preserves_a_trailing_date_stem(temp_memory_dir):
     s = reconcile.slugify(long_dated)
     assert s.endswith("2026-08-25")
     assert parse._date_hint(s, {}) == "20260825"   # dashed dates normalize to joined form
+
+
+def test_type_nested_under_metadata_is_read(tmp_path):
+    # Claude Code writes `metadata:\n  type: feedback`; read only at the top
+    # level, its feedback and user memories were filed as untyped (project).
+    from qhaway.parse import parse_memory_file
+    f = tmp_path / "m.md"
+    f.write_text("---\nname: m\ndescription: d\nmetadata:\n  node_type: memory\n  type: feedback\n---\nb\n")
+    assert parse_memory_file(str(f))["content_type"] == "feedback"
+
+
+def test_top_level_type_wins_over_nested(tmp_path):
+    from qhaway.parse import parse_memory_file
+    f = tmp_path / "m.md"
+    f.write_text("---\nname: m\ntype: user\nmetadata:\n  type: project\n---\nb\n")
+    assert parse_memory_file(str(f))["content_type"] == "user"
+
+
+def test_index_from_before_nested_types_is_rebuilt(tmp_path):
+    # Reconcile reparses only files whose mtime/size changed, so an index built
+    # before nested `metadata: type:` was read keeps files untyped unless the
+    # version bump forces a rebuild.
+    from qhaway import model
+    from qhaway.reconcile import reconcile
+    (tmp_path / "m.md").write_text("---\nname: m\nmetadata:\n  type: feedback\n---\nb\n")
+    reconcile(str(tmp_path))
+    conn = model.get_connection(str(tmp_path))
+    conn.execute("UPDATE nodes SET content_type = NULL")
+    conn.execute("PRAGMA user_version = 3")  # 0.7.2's version, which ignored the nested type
+    conn.commit(); conn.close()
+    reconcile(str(tmp_path))
+    conn = model.get_connection(str(tmp_path))
+    assert conn.execute("SELECT content_type FROM nodes").fetchone()[0] == "feedback"
+    conn.close()
+
+
+def test_superseded_slice_shows_what_the_live_footer_hides(tmp_path):
+    # The live footer counts link-superseded memories as hidden and points at
+    # status="superseded"; that slice must return them, or the pointer is a dead end.
+    from qhaway import server
+    (tmp_path / "old.md").write_text("---\nname: old plan\ntype: project\n---\nb\n")
+    (tmp_path / "new.md").write_text("---\nname: new plan\ntype: project\nsupersedes: old\n---\nb\n")
+    live = server.recall(memory_dir=str(tmp_path))
+    assert "+1 superseded memories hidden" in live and "old plan" not in live
+    hidden = server.recall(status="superseded", memory_dir=str(tmp_path))
+    assert "old plan" in hidden and "new plan" not in hidden
+
+
+def test_dates_normalize_to_utc_and_order_with_date_only_hints(tmp_path):
+    # Tony: normalize to UTC. An offset timestamp names the UTC instant; a bare
+    # date still orders before any timestamp on the same day.
+    from qhaway.parse import parse_memory_file
+    def hint(stem, date):
+        f = tmp_path / f"{stem}.md"
+        f.write_text(f"---\nname: {stem}\ndate: '{date}'\n---\nb\n")
+        return parse_memory_file(str(f))["date_hint"]
+    late_vancouver = hint("a", "2026-10-01T23:30:00-07:00")
+    assert late_vancouver == "20261002T063000Z"
+    assert hint("b", "2026-10-02") < late_vancouver < hint("c", "2026-10-02T07:00:00Z")
+    unquoted = tmp_path / "d.md"  # YAML parses this into a datetime, not a string
+    unquoted.write_text("---\nname: d\ndate: 2026-10-01T23:30:00-07:00\n---\nb\n")
+    assert parse_memory_file(str(unquoted))["date_hint"] == late_vancouver

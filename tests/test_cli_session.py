@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from qhaway import cli, paths
+from qhaway import cli, paths, project
 
 
 def _run(args, env):
@@ -62,3 +62,88 @@ def test_session_start_hints_name_recall_not_the_cli(tmp_path, capsys):
     out = capsys.readouterr().out
     assert 'recall(type="project")' in out
     assert "qhaway index" not in out
+
+
+def _overflowing_store(tmp_path):
+    proj = tmp_path / "proj"; proj.mkdir()
+    derived = paths.memory_dir_for(str(proj), home=tmp_path)
+    derived.mkdir(parents=True)
+    for i in range(200):
+        (derived / f"t{i:03d}.md").write_text(
+            f"---\nname: T{i:03d}\ndescription: {'d' * 150}\nmetadata:\n  type: project\n---\nbody\n"
+        )
+    env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
+    return derived, env
+
+
+def test_session_start_fits_the_hook_channel_with_its_footer(tmp_path, capsys):
+    # Claude Code puts hook output in context only up to a limit; above it the
+    # model gets a short preview of the beginning, and the omissions footer is
+    # lost (#46). The whole projection, footer included, must fit.
+    _, env = _overflowing_store(tmp_path)
+    assert _run(["session-start"], env) == 0
+    out = capsys.readouterr().out
+    assert len(out) <= 10_000  # Claude Code's cap, independent of HOOK_BUDGET
+    assert "not shown" in out and 'recall(type="project")' in out
+
+
+def test_reconcile_emit_defaults_to_the_hook_budget(tmp_path, capsys):
+    # The plugin's SessionStart hook runs `reconcile --emit` with no --budget.
+    derived, _ = _overflowing_store(tmp_path)
+    assert _run(["reconcile", "--emit", "--dir", str(derived)], {}) == 0
+    out = capsys.readouterr().out
+    assert len(out) <= 10_000 and "not shown" in out
+    [event] = [e for e in _events(derived) if e["verb"] == "session-start"]
+    assert event["chars"] == len(out)  # the plugin's deliveries are measured too
+
+
+def test_reconcile_emit_honors_an_explicit_budget(tmp_path, capsys):
+    derived, _ = _overflowing_store(tmp_path)
+    assert _run(["reconcile", "--emit", "--budget", "20000", "--dir", str(derived)], {}) == 0
+    assert 10_000 < len(capsys.readouterr().out) <= 20_000
+
+
+def _events(derived):
+    import json
+    return [json.loads(l) for l in (derived / "events.jsonl").read_text().splitlines()]
+
+
+def test_session_start_logs_what_it_delivered(tmp_path, capsys):
+    # Without this, a delivery over the hook cap was invisible (#46).
+    derived, env = _overflowing_store(tmp_path)
+    assert _run(["session-start"], env) == 0
+    out = capsys.readouterr().out
+    [event] = [e for e in _events(derived) if e["verb"] == "session-start"]
+    assert event["chars"] == len(out)
+    assert event["budget"] == project.HOOK_BUDGET
+    assert event["omitted"]["project"] > 0
+
+
+def test_session_start_keeps_the_newest_project_memories_when_guidance_fills_it(tmp_path, capsys):
+    # Standing guidance (user/feedback) first used to take the whole hook budget,
+    # crowding out the newest project memories (the handoff a session needs).
+    proj = tmp_path / "proj"; proj.mkdir()
+    derived = paths.memory_dir_for(str(proj), home=tmp_path)
+    derived.mkdir(parents=True)
+    for i in range(60):
+        (derived / f"f{i:03d}.md").write_text(
+            f"---\nname: F{i:03d}\ndescription: {'g' * 150}\nmetadata:\n  type: feedback\n---\nb\n")
+    for day in range(1, 21):
+        (derived / f"p-2026-09-{day:02d}.md").write_text(
+            f"---\nname: P 2026-09-{day:02d}\ndescription: {'w' * 150}\nmetadata:\n  type: project\n---\nb\n")
+    env = {"CLAUDE_PROJECT_DIR": str(proj), "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
+    assert _run(["session-start"], env) == 0
+    out = capsys.readouterr().out
+    shown = {d for d in range(1, 21) if f"P 2026-09-{d:02d}" in out}
+    assert project.HOOK_FRONTIER > 0 and 20 in shown
+    assert set(range(21 - project.HOOK_FRONTIER, 21)) <= shown
+    assert "feedback memories not shown" in out
+
+
+def test_events_record_the_qhaway_version(tmp_path, capsys):
+    # The usage report counts only events carrying a version, so events from
+    # before the pre-registration can't leak into its cohort.
+    import qhaway
+    derived, env = _overflowing_store(tmp_path)
+    assert _run(["session-start"], env) == 0
+    assert all(e["version"] == qhaway.__version__ for e in _events(derived))

@@ -77,7 +77,11 @@ For maintainers:
    on a clean machine, given only the README, installs and uses qhaway and
    reports every place it had to guess. CI checks only that documented commands
    parse (`tests/test_docs_commands.py`); stale claims and missing steps need a
-   reader.
+   reader. Also replay the release against a copy of a store that the host
+   wrote itself (Claude Code's own memory files, not ones written through
+   `remember`), and compare the index with the previous release's: qhaway's
+   fixtures use qhaway's own format, which is how the nested `metadata: type:`
+   form went unread (#49).
 2. After it merges, tag the merge commit on `main`: `git tag -s vX.Y.Z` and
    push the tag. The release workflow refuses a tag that doesn't match
    `pyproject.toml` or has no changelog entry, then publishes to TestPyPI.

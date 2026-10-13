@@ -71,3 +71,43 @@ def test_recall_superseded_hint_names_recall(tmp_path):
     assert "superseded memories hidden" in text
     assert 'recall(status="superseded")' in text
     assert "qhaway index" not in text
+
+
+def test_recall_logs_its_query_limit_and_omissions(tmp_path):
+    import json
+    from qhaway import server
+    for i in range(3):
+        (tmp_path / f"t{i}.md").write_text(f"---\nname: arango {i}\nmetadata:\n  type: project\n---\nb\n")
+    server.recall(query="arango", limit=1, memory_dir=str(tmp_path))
+    [event] = [json.loads(l) for l in (tmp_path / "events.jsonl").read_text().splitlines()]
+    assert (event["query"], event["limit"]) == ("arango", 1)
+    assert event["omitted"] == {"project": 2}
+
+
+def test_recall_events_share_a_per_process_session_and_record_the_header(tmp_path, monkeypatch):
+    # Without a session identity, repeated questions within one session can't be
+    # seen; without the header, neither can zero-result recalls.
+    import json
+    from qhaway import server
+    monkeypatch.delenv("QHAWAY_SESSION_ID", raising=False)
+    (tmp_path / "a.md").write_text("---\nname: arango\ntype: project\n---\nb\n")
+    server.recall(query="arango", memory_dir=str(tmp_path))
+    server.recall(query="nothing-matches", memory_dir=str(tmp_path))
+    first, second = [json.loads(l) for l in (tmp_path / "events.jsonl").read_text().splitlines()]
+    assert first["session_id"] and first["session_id"] == second["session_id"]
+    assert first["header"] == "1 matching memory; all shown."
+    assert second["header"] == "No matching memories."
+
+
+def test_remember_stamps_the_date_it_was_written(tmp_path):
+    # Recency is the cheapest filter, but a memory without a date in its title
+    # had no date at all and sorted after every dated one (73% of one machine's
+    # memories).
+    import datetime, re
+    from qhaway import parse, server
+    name = server.remember(type="project", title="no date in this title", body="b",
+                           memory_dir=str(tmp_path))
+    text = (tmp_path / name).read_text()
+    assert re.search(r"^date: '?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z'?$", text, re.M)  # UTC, explicit zone
+    hint = parse.parse_memory_file(str(tmp_path / name))["date_hint"]
+    assert hint.startswith(datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d"))

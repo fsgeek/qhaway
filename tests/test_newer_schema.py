@@ -72,3 +72,21 @@ def test_an_older_index_is_still_rebuilt(tmp_path):
     model.get_connection(str(tmp_path)).close()
 
     assert _disk_state(tmp_path)[0] == model.SCHEMA_VERSION
+
+
+def test_an_upgrade_between_the_check_and_the_rebuild_is_left_untouched(tmp_path, monkeypatch):
+    # Codex review: another process can stamp a newer schema after this one
+    # decided the index had drifted; the rebuild must re-check under its lock.
+    _write(tmp_path, "alpha")
+    model.get_connection(str(tmp_path)).close()
+
+    def upgraded_meanwhile(path):
+        _stamp_newer(tmp_path)
+        return True
+
+    monkeypatch.setattr(model, "_drifted_on_disk", upgraded_meanwhile)
+    conn = model.get_connection(str(tmp_path))
+    assert conn.execute("SELECT file FROM nodes").fetchall() == [("alpha.md",)]
+    conn.close()
+    version, tables = _disk_state(tmp_path)
+    assert version == model.SCHEMA_VERSION + 1 and "future_marker" in tables

@@ -32,7 +32,7 @@ def parse_memory_file(filepath: str) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     metadata, body, parse_warning = _split_frontmatter(text)
     name = _string_or_none(metadata.get("name"))
-    content_type = _string_or_none(metadata.get("type"))
+    content_type = _string_or_none(metadata.get("type")) or _nested_type(metadata)
     origin_session = _origin_session(metadata)
     date_hint = _date_hint(path.stem, metadata)
 
@@ -159,6 +159,14 @@ def _tolerant_frontmatter(raw_frontmatter: str) -> dict[str, str]:
     return metadata
 
 
+def _nested_type(metadata: dict[str, Any]) -> str | None:
+    """Claude Code writes `type` under a `metadata:` mapping."""
+    nested = metadata.get("metadata")
+    if isinstance(nested, dict):
+        return _string_or_none(nested.get("type"))
+    return None
+
+
 def _origin_session(metadata: dict[str, Any]) -> str | None:
     direct = _string_or_none(metadata.get("originSessionId"))
     if direct:
@@ -191,7 +199,15 @@ def _normalize_date(value: str) -> str:
     dashed = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", value)
     if dashed:
         return "".join(dashed.groups())
-    return value
+    # A timestamp with a zone orders as its UTC instant, YYYYMMDDTHHMMSSZ, which
+    # sorts after a bare YYYYMMDD on the same day.
+    try:
+        moment = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if moment.tzinfo is None:
+        return value
+    return moment.astimezone(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _role(stem: str) -> str | None:

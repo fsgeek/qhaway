@@ -6,12 +6,27 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ### Changed
 
+- `remember` writes the time it was written, in UTC (`date: '2026-10-02T15:48:36Z'`), into each new memory's frontmatter. Dates with a time zone are ordered by their UTC instant; a bare date sorts before any timestamp on the same day. Ordering by recency used only dates found in titles or filenames, so memories without one sorted after every dated memory; on one machine that was 1,224 of 1,686. Existing memories are unchanged.
+
+## [0.7.3] - 2026-10-02
+
+### Added
+
+- `qhaway --version`.
+- The local event log (`events.jsonl` in the memory directory, metadata only) now records each session-start delivery (characters, budget, and the memories left out, by type), and records `recall`'s `query`, `limit`, left-out counts and first line (so a recall that found nothing is visible). Events from one MCP server process share a session id, so repeated questions within a session can be seen, and every event records qhaway's version. These are the measurements that would have shown [#46](https://github.com/fsgeek/qhaway/issues/46), and that should guide what session-start carries. Nothing leaves the machine.
+
+### Changed
+
+- Session-start picks the five newest project (non-guidance) memories before user and feedback memories, so standing guidance can no longer fill the 9,000-character hook budget and crowd out the latest handoff ([#46](https://github.com/fsgeek/qhaway/issues/46)). The display order is unchanged, and whatever doesn't fit is still counted in the footer.
 - Without `--dir`, `QHAWAY_MEMORY_DIR` or Claude Code's `CLAUDE_PROJECT_DIR`, commands such as `serve` used to derive a store under `~/.claude` from the current directory, creating it if needed. When there is no `~/.claude` (the user doesn't run Claude Code, e.g. `serve` under OpenCode), they now exit with status 2 and ask for `--dir` instead of putting memory inside another tool's directory.
 
 ### Fixed
 
+- `recall(status="superseded")` and `qhaway index --status superseded` now return memories superseded by a newer memory's `supersedes:` link, which is how `remember` supersedes. Before, the live index's footer counted them as hidden and pointed at that call, but the call returned only memories whose own `status:` said superseded. On one real store it returned 1 of the 15 the footer promised. Claims on those memories are re-grounded in that slice too.
+- Memories whose `type` is nested under `metadata:` (the frontmatter Claude Code writes) are now typed correctly. qhaway read only a top-level `type:`, so these feedback, user and reference memories were indexed as project memories: they lost their section and their priority, and were the first to be dropped when the index overflowed. On one real store, 17 of 29 feedback memories had been misfiled. The index version is now 4, so existing indexes are rebuilt once to reclassify unchanged files.
+- The session-start index now fits Claude Code's 10,000-character limit on hook output ([#46](https://github.com/fsgeek/qhaway/issues/46)). It was sized for the ~24KB `MEMORY.md` loader, so on any store that overflowed, Claude Code saved it to a file and showed the model a 2,000-character preview without the omissions footer or the `recall` pointers. Session-start and `reconcile --emit` (the plugin's hook) now use a 9,000-byte budget; `--budget` still overrides `--emit`. Both log their deliveries.
 - The uninstall command `init` prints, and the README's, now include `--isolated`. Without it, `uvx` runs an installed qhaway tool's own (possibly older) `uninstall`, which may not recognize the commands a newer `init` wrote.
-- An older qhaway no longer deletes the index a newer qhaway wrote ([#37](https://github.com/fsgeek/qhaway/issues/37)). A schema mismatch used to mean "delete and rebuild" in both directions, so two versions sharing a store took turns destroying each other's index. Now a newer-than-known index is left untouched: the older version reads the topic files into an in-memory index for that call and prints a one-time notice suggesting an upgrade. An older index is still rebuilt. This protects indexes written by releases after this one.
+- An older qhaway no longer deletes the index a newer qhaway wrote ([#37](https://github.com/fsgeek/qhaway/issues/37)). A schema mismatch used to mean "delete and rebuild" in both directions, so two versions sharing a store took turns destroying each other's index. Now a newer-than-known index is left untouched: the older version reads the topic files into an in-memory index for that call and prints a one-time notice suggesting an upgrade. An older index is still rebuilt. This protects indexes written by releases after this one. A rebuild also re-checks under its lock, so an index upgraded by another process after this one decided to rebuild is left alone too.
 
 ## [0.7.2] - 2026-09-30
 
@@ -227,6 +242,7 @@ Initial release. Requires Python 3.14 or later.
 - `qhaway serve` runs an MCP server with two tools: `recall` (read the budgeted projection) and `remember` (write a topic file, then reconcile). In this mode `MEMORY.md` becomes a read-only redirect.
 - Other commands: `reconcile`, `check` (broken links, orphaned backups, overflow) and `exit`.
 
+[0.7.3]: https://github.com/fsgeek/qhaway/releases/tag/v0.7.3
 [0.7.2]: https://github.com/fsgeek/qhaway/releases/tag/v0.7.2
 [0.7.1]: https://github.com/fsgeek/qhaway/releases/tag/v0.7.1
 [0.7.0]: https://github.com/fsgeek/qhaway/releases/tag/v0.7.0

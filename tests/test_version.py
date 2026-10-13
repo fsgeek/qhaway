@@ -35,3 +35,13 @@ def test_mcp_serverinfo_reports_qhaway_version():
     opts = mcp._lowlevel_server.create_initialization_options()
     assert opts.server_version == qhaway.__version__
     assert opts.server_version != "1.28.0"  # the SDK version it used to misreport
+
+
+def test_cli_prints_its_version(capsys):
+    # A cold reader had to use importlib.metadata to learn what uvx fetched.
+    import pytest
+    from qhaway import cli
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["--version"])
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out.strip() == f"qhaway {qhaway.__version__}"

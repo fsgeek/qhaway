@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from pathlib import Path
 
-from qhaway import cli, model, project, reconcile
+from qhaway import __version__, cli, model, project, reconcile
 
 VALID_TYPES = {"user", "feedback", "project", "reference"}
 _MAX_SUFFIX = 100
 _EVENT_LOG = "events.jsonl"
+# Claude Code starts one server per session, so a per-process id groups a
+# session's calls when no QHAWAY_SESSION_ID is set.
+_PROCESS_SESSION = uuid.uuid4().hex
 
 
 def _emit(root: Path, event: dict) -> None:
@@ -20,7 +24,8 @@ def _emit(root: Path, event: dict) -> None:
     Metadata only — never the body. Observability must never break a verb, so
     failures here are swallowed. See [[single-writer-summons-consensus]]."""
     event.setdefault("ts", time.time())
-    event.setdefault("session_id", os.environ.get("QHAWAY_SESSION_ID"))
+    event.setdefault("version", __version__)
+    event.setdefault("session_id", os.environ.get("QHAWAY_SESSION_ID") or _PROCESS_SESSION)
     line = json.dumps(event, separators=(",", ":")) + "\n"
     try:
         fd = os.open(str(root / _EVENT_LOG), os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o644)
@@ -98,7 +103,9 @@ def recall(type=None, role=None, status="live", memory_dir=".", reground=None, l
     if claims:
         markdown = markdown.rstrip() + "\n\n" + _render_regroundings(claims, reground) + "\n"
     _emit(root, {"verb": "recall", "type": type, "role": role, "status": status,
-                 "result_chars": len(markdown)})
+                 "query": query, "limit": limit, "result_chars": len(markdown),
+                 "header": markdown.split("\n", 1)[0],
+                 "omitted": result.overflow.omitted_counts})
     return markdown
 
 
@@ -107,10 +114,13 @@ def _claim_nodes(conn, content_type, role, status) -> list[dict]:
     must respect the recall filter (type/role/status), not leak claims from
     memories outside the projected set. Normalizes content_type/status the way the
     projection does (project._normalize_row) so the two slices agree exactly."""
+    superseded_slugs = project._superseded_slugs(conn)
     return [
         node for node in model.fetch_nodes(conn)
         if node.get("claim")
-        and (node.get("status") or "live") == status
+        and project._effective_status(
+            {"file": node["file"], "status": node.get("status") or "live"}, superseded_slugs
+        ) == status
         and (content_type is None or (node.get("content_type") or "project") == content_type)
         and (role is None or node.get("role") == role)
     ]

@@ -31,7 +31,9 @@ except ImportError:  # Windows: lock one byte of the lock file instead
     def _unlock(handle) -> None:
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
-SCHEMA_VERSION = 3
+# 4: same tables; a rebuild re-reads `type` nested under `metadata:` (Claude
+# Code's form), which reconcile wouldn't reparse in unchanged files.
+SCHEMA_VERSION = 4
 DB_NAME = ".qhaway.db"
 LOCK_NAME = ".qhaway.db.reset.lock"
 _DB_SUFFIXES = ("", "-wal", "-shm")
@@ -86,7 +88,8 @@ def get_connection(memory_dir: str) -> sqlite3.Connection:
         return _from_files_in_memory(root)
 
     if _drifted_on_disk(db_path(root)):
-        rebuild_database(str(root))
+        if not rebuild_database(str(root)):
+            return _from_files_in_memory(root)
         return _open_wal(db_path(root))
 
     conn = _open_wal(db_path(root))
@@ -270,8 +273,11 @@ def fetch_nodes(conn: sqlite3.Connection) -> list[dict]:
     return nodes
 
 
-def rebuild_database(memory_dir: str) -> None:
-    """Destructively delete all db files and rebuild from topic files (drift recovery)."""
+def rebuild_database(memory_dir: str) -> bool:
+    """Destructively delete all db files and rebuild from topic files (drift recovery).
+
+    False, touching nothing, when a newer qhaway stamped the index after the
+    caller decided it had drifted (#37: never delete a newer index)."""
     root = Path(memory_dir)
     lock_path = root / LOCK_NAME
     lock_fd = open(lock_path, "a+", encoding="utf-8")
@@ -289,6 +295,8 @@ def rebuild_database(memory_dir: str) -> None:
                         f"could not acquire reset lock {LOCK_NAME} (another rebuild in progress)"
                     )
                 time.sleep(0.1)
+        if _newer_on_disk(db_path(root)):
+            return False
         for suffix in _DB_SUFFIXES:
             target = root / f"{DB_NAME}{suffix}"
             if target.exists():
@@ -298,6 +306,7 @@ def rebuild_database(memory_dir: str) -> None:
             _full_load(conn, root)
         finally:
             conn.close()
+        return True
     finally:
         # Only release a lock we hold: unlocking an unheld region is a no-op
         # under flock but raises under msvcrt — and would mask the timeout error.
