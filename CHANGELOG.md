@@ -2,6 +2,16 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [Unreleased]
+
+### Changed
+
+- `qhaway[reground]` checks `collection_count` claims with the read-only credentials in yanantin's `db.ini` (`reader_user`, `reader_password`) and no longer uses the admin ones. A count needs only read access. Without reader credentials, the claim shows its stored value as frozen, with its date and the reason.
+
+### Fixed
+
+- `recall` no longer fails when the live store behind a re-grounded claim is unreachable; that claim shows as frozen, with the error type.
+
 ## [0.7.4] - 2026-10-13
 
 ### Added

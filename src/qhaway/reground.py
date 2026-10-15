@@ -30,11 +30,11 @@ def _render(stored: int, live: int, as_of: str) -> str:
     return f"{live} (live; matches stored claim, as of {as_of})"
 
 
-def _live_count(db_name: str, collection: str):
-    """Count one collection via the admin tier, reading db.ini directly.
+def _live_count(db_name: str, collection: str, user: str, password: str):
+    """Count one collection with the given (read-only) credentials.
 
-    Read-only — a count, never a write. python-arango is the `[reground]` extra;
-    importing it here (not at module load) keeps a base install importable.
+    python-arango is the `[reground]` extra; importing it here (not at module
+    load) keeps a base install importable.
     """
     from arango import ArangoClient
 
@@ -44,8 +44,18 @@ def _live_count(db_name: str, collection: str):
     scheme = "https" if db.get("ssl", "false") == "true" else "http"
     host = f"{scheme}://{db['host']}:{db['port']}"
     client = ArangoClient(hosts=host)
-    handle = client.db(db_name, username=db["admin_user"], password=db["admin_passwd"])
+    handle = client.db(db_name, username=user, password=password)
     return handle.collection(collection).count()
+
+
+def _reader_credentials():
+    """yanantin's read-only tier from db.ini, or None. Never the admin tier:
+    a count needs no more than read access."""
+    cfg = configparser.ConfigParser()
+    cfg.read(_DB_INI)
+    db = cfg["database"] if cfg.has_section("database") else {}
+    user, password = db.get("reader_user"), db.get("reader_password")
+    return (user, password) if user and password else None
 
 
 def _provider(claim: dict) -> str:
@@ -60,7 +70,14 @@ def _provider(claim: dict) -> str:
         as_of = claim.get("as_of")
         return f"{value} (frozen; as of {as_of} — kind {claim.get('kind')!r} not live-checkable)"
     stored = int(claim["value"])
-    live = _live_count(claim["db"], claim["collection"])
+    frozen = f"{claim['value']} (frozen; as of {claim['as_of']} — "
+    creds = _reader_credentials()
+    if creds is None:
+        return frozen + "no read-only credentials in db.ini)"
+    try:
+        live = _live_count(claim["db"], claim["collection"], *creds)
+    except Exception as exc:  # an unreachable store must not break recall
+        return frozen + f"live check failed: {type(exc).__name__})"
     return _render(stored, live, claim["as_of"])
 
 
