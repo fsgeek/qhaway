@@ -6,7 +6,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ### Changed
 
-- `qhaway[reground]` checks `collection_count` claims with the read-only credentials in yanantin's `db.ini` (`reader_user`, `reader_password`) and no longer uses the admin ones. A count needs only read access. Without reader credentials, the claim shows its stored value as frozen, with its date and the reason.
+- `qhaway[reground]` checks `collection_count` claims with yanantin's read-only account, from `~/.yanantin/config/reader.ini`. It no longer reads `db.ini`, which holds the admin password. A count needs only read access. If `reader.ini` or one of its keys is missing, the claim shows its stored value as frozen, with its date and the reason.
 
 ### Fixed
 

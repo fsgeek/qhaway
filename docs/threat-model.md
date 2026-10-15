@@ -94,8 +94,12 @@ caches; publishing to real PyPI is manual by decision (see
 
 ### 7. The `[reground]` extra
 Optional ArangoDB client for claim re-grounding. qhaway never imports the DB
-layer in core; the provider is discovered at serve time from an operator-owned
-`db.ini`. Credentials are the operator's, stored outside this project.
+layer in core; the provider is discovered at serve time when the operator has a
+`~/.yanantin/config` directory. It reads only `reader.ini` there, a read-only
+account (0.7.5+); it never opens `db.ini`, which holds admin credentials, so a
+compromised or buggy qhaway can count but not write. Credentials are the
+operator's, stored outside this project. An unreachable or refusing store
+renders the claim frozen; it does not fail `recall`.
 
 ## Non-goals
 qhaway does not authenticate callers (the host does), does not encrypt at rest
