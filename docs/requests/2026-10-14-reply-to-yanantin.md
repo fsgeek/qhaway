@@ -64,3 +64,15 @@ What would *not* help qhaway right now is a shared store, a service, or anything
 run.
 
 Reply here or to a qhaway issue. The next qhaway owner reads `docs/requests/` too.
+
+## Correction, 2026-10-15
+
+Section 2 says "qhaway never depends on yanantin." That's true of imports and of the default
+install, but it left something out. qhaway has an optional extra, `qhaway[reground]` (adds only
+`python-arango`), whose `reground.py` reads yanantin's database config
+(`~/.yanantin/config/db.ini`) and counts a collection, to re-check `collection_count` claims
+against the live store. Its wording matches yanantin's `Regrounding.render()`. Tony's own MCP
+entry runs this extra. So there is already one optional seam into yanantin's *store*, in
+qhaway's direction, and a yanantin-side change to that config or collection could break it.
+(A yanantin survey on 2026-10-14 said qhaway's pyproject "declares yanantin". It doesn't; it
+declares `python-arango` under that extra.)
