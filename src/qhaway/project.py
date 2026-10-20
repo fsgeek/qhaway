@@ -114,7 +114,21 @@ def project_slice(
     if _byte_len(output) <= budget:
         return output
 
+    # Too tight for the per-type footer: one compact line still says how much,
+    # and of what kind, was left out (#55).
+    compact = _join_lines([header(0), _compact_omissions(filtered)])
+    if filtered and _byte_len(compact) <= budget:
+        return compact
+
     return _fit_footer_only(_join_lines([header(0), _actual_footer(filtered, hidden_superseded, hint)]), budget)
+
+
+def _compact_omissions(omitted: list[dict[str, Any]]) -> str:
+    counts: dict[str, int] = {}
+    for row in omitted:
+        counts[row["content_type"]] = counts.get(row["content_type"], 0) + 1
+    parts = ", ".join(f"{count} {content_type}" for content_type, count in _ordered_counts(counts))
+    return f"+{len(omitted)} not shown: {parts}."
 
 
 def _query_terms(query: str | None) -> list[str]:

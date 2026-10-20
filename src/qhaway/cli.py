@@ -123,6 +123,12 @@ def _codex_setup_cmd(which: str, project_dir: str | None, memory_dir: str | None
     from qhaway import codex_setup
 
     project_root = Path(project_dir) if project_dir else Path.cwd()
+    codex_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
+    if which != "uninstall" and not codex_home.is_dir():
+        sys.stderr.write(
+            f"qhaway: note: no ~/.codex (or $CODEX_HOME) at {codex_home}, so Codex hasn't run on this machine.\n"
+            "        Writing the project configuration anyway; it takes effect once Codex is installed.\n"
+        )
     try:
         result, store = codex_setup.configure(
             project_root, Path(memory_dir) if memory_dir else None,
@@ -150,6 +156,11 @@ def _setup_cmd(which: str) -> int:
     settings_path = home / ".claude" / "settings.json"  # hooks (PUSH)
     mcp_config_path = home / ".claude.json"             # MCP server (PULL)
     if which in ("init", "install"):
+        if not (home / ".claude").is_dir():
+            sys.stderr.write(
+                "qhaway: note: no ~/.claude here, so Claude Code hasn't run on this machine.\n"
+                "        Writing the configuration anyway; it takes effect once Claude Code is installed.\n"
+            )
         result = setup_mod.install(settings_path, mcp_config_path=mcp_config_path)
         if result == "already":
             sys.stdout.write("qhaway: already installed, nothing to do.\n")
@@ -293,7 +304,10 @@ def write_index(directory: str, budget: int, style: str = "exit") -> None:
     memory_dir = Path(directory)
     conn = model.get_connection(directory)
     try:
-        total = len(model.topic_files(memory_dir))
+        # Live memories, as the header counts them; superseded ones are declared
+        # in the footer, not here (#55).
+        survey = project.project_slice_with_overflow(conn, budget=budget, limit=0)
+        total = sum(survey.overflow.omitted_counts.values())
 
         def compose_footer(omitted: int) -> str:
             if style == "live":
@@ -304,8 +318,8 @@ def write_index(directory: str, budget: int, style: str = "exit") -> None:
                 )
             return (
                 f"\n\n---\n_qhaway exit index — {total} memories under {budget} "
-                f"bytes; {omitted} set aside. Self-sufficient static index "
-                "(qhaway disabled)._\n"
+                f"bytes; {omitted} set aside. A static index; it does not "
+                "update itself._\n"
             )
 
         # Probe at full budget only to SIZE the reserve (footer + signature bytes);
