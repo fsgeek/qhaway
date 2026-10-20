@@ -331,8 +331,9 @@ a byte-identical index.
 
 `MEMORY.md` is fully machine-derived — there are no hand-maintained regions. If
 qhaway ever finds that the index was edited by hand since it last wrote it, it does
-**not** overwrite the edit: it renames the existing file to a timestamped
-`MEMORY-<timestamp>.md` and writes a fresh index. Your edit is preserved verbatim;
+**not** overwrite the edit: it renames the existing file and writes a fresh index.
+The first file it sets aside becomes `MEMORY.preinstall.md`; later ones get a
+timestamped name, `MEMORY-<timestamp>.md`. Your edit is preserved verbatim;
 the index rebuilds from the files. Nothing is interpreted, merged, or lost.
 
 ## Design philosophy

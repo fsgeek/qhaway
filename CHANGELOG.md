@@ -4,6 +4,11 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ## [Unreleased]
 
+### Changed
+
+- `init` says so when the host isn't installed: with no `~/.claude` (or, for `--host codex`, no `~/.codex` or `$CODEX_HOME`) it still writes the configuration, which takes effect once the host is installed, but prints a note instead of succeeding silently ([#55](https://github.com/fsgeek/qhaway/issues/55)).
+- Docs: the README now says the first index qhaway sets aside becomes `MEMORY.preinstall.md` and later ones get timestamped names; the Codex guide says uninstall leaves the empty install lock on purpose ([#55](https://github.com/fsgeek/qhaway/issues/55)).
+
 ### Fixed
 
 - The index always says what it left out, even at small budgets. When the per-type omissions footer can't fit, one compact line takes its place (`+3 not shown: 1 user, 1 feedback, 1 project.`); before, only the header remained, saying "showing 0" with no indication of what was missing ([#55](https://github.com/fsgeek/qhaway/issues/55)).

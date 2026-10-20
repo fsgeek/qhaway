@@ -59,7 +59,10 @@ and native memory remain intact. If removal leaves `config.toml` at zero bytes,
 that file is deleted; `.codex/` is removed only if empty. A previously empty
 config and a missing config are treated equivalently. The persistent install
 lock lives outside the project at `~/.qhaway/locks/<project-path-hash>.lock`,
-so a clean project is left with no installation artifacts.
+so a clean project is left with no installation artifacts. Uninstall leaves that
+lock file in place on purpose: deleting a lock that another process may hold would
+break the mutual exclusion it provides. It is empty, and safe to delete when no
+`init` or `uninstall` is running.
 
 The installer preserves unrelated config bytes, including comments and line
 endings. It refuses malformed TOML, a symlinked config or `.codex` directory, a target that aliases global Codex
