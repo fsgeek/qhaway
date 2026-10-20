@@ -12,8 +12,11 @@ import shutil
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from qhaway.cli import LOADER_BYTES, LOADER_LINES  # noqa: E402
+# Read qhaway's constants from the source text, not by importing qhaway.cli,
+# so this runs on a bare Python (the cloud watch routine has no qhaway deps).
+_CLI = (Path(__file__).resolve().parent.parent / "src" / "qhaway" / "cli.py").read_text("utf-8")
+LOADER_LINES = int(re.search(r"^LOADER_LINES = ([\d_]+)$", _CLI, re.M).group(1).replace("_", ""))
+LOADER_BYTES = int(re.search(r"^LOADER_BYTES = ([\d_]+)$", _CLI, re.M).group(1).replace("_", ""))
 
 _BLOCK = re.compile(rb'"MEMORY\.md",[A-Za-z_$][\w$]*=(\d+),[A-Za-z_$][\w$]*=(\d+)')
 
