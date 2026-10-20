@@ -24,7 +24,7 @@ def _store(root):
 def test_bare_index_trailer_agrees_with_header_and_does_not_claim_disabled(tmp_path):
     _store(tmp_path)
     assert cli.main(["index", "--dir", str(tmp_path)]) == 0
-    text = (tmp_path / "MEMORY.md").read_text()
+    text = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")  # not the locale: cp1252 on Windows
     assert text.splitlines()[0] == "3 matching memories; all shown."
     assert re.search(r"— 3 memories under \d+ bytes; 0 set aside", text)
     assert "qhaway disabled" not in text
@@ -46,7 +46,7 @@ def test_tight_budget_keeps_a_count_of_what_was_left_out(tmp_path):
 def test_small_written_index_still_declares_omissions(tmp_path):
     _store(tmp_path)
     assert cli.main(["index", "--dir", str(tmp_path), "--budget", "300"]) == 0
-    text = (tmp_path / "MEMORY.md").read_text()
+    text = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")  # not the locale: cp1252 on Windows
     assert len(text.encode()) <= 300
     assert text.startswith("3 matching memories")
     assert "not shown" in text
