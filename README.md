@@ -60,6 +60,19 @@ all session. qhaway works both sides of that trade:
 The figures come from one store, checked against Claude Code 2.1.284. Treat them
 as an example, not a benchmark.
 
+## Is your index being cut?
+
+Before installing anything, check:
+
+```sh
+uvx qhaway diagnose    # from inside your project, or pass --dir /path/to/memory
+```
+
+It reads your `MEMORY.md` and says whether Claude Code loads all of it (Claude Code
+loads the first 200 lines, up to 25,000 bytes) and, if not, which entries fall
+past the cut. It only reads; nothing is written. Claude Desktop reads less: pass
+`--bytes` to check against a smaller limit.
+
 ## Install
 
 ```sh

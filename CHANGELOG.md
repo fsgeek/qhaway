@@ -4,6 +4,11 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ## [Unreleased]
 
+### Added
+
+- `qhaway diagnose`: a read-only check of whether Claude Code cuts your `MEMORY.md` (it loads the first 200 lines, up to 25,000 bytes), and which entries fall past the cut. No database, no reconcile, nothing written. `--lines`/`--bytes` check against another host's limits; Claude Desktop reads less.
+- `scripts/check_cc_limits.py` compares an installed Claude Code's `MEMORY.md` caps with the ones qhaway assumes (exit 1 if they differ, 2 if it can't find them).
+
 ### Changed
 
 - `init` says so when the host isn't installed: with no `~/.claude` (or, for `--host codex`, no `~/.codex` or `$CODEX_HOME`) it still writes the configuration, which takes effect once the host is installed, but prints a note instead of succeeding silently ([#55](https://github.com/fsgeek/qhaway/issues/55)).
