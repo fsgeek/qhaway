@@ -64,3 +64,17 @@ def test_init_names_an_isolated_uninstall(tmp_path, capsys):
     # uninstall, which may not recognize the commands this version wrote.
     _run(["init"], tmp_path)
     assert "uvx --isolated qhaway uninstall" in capsys.readouterr().out
+
+
+def test_init_without_claude_code_says_so(tmp_path, capsys):
+    # No ~/.claude: Claude Code has never run here. init still writes (it may be
+    # installed later), but must not succeed silently (#55).
+    assert _run(["init"], tmp_path) == 0
+    err = capsys.readouterr().err
+    assert "no ~/.claude" in err and "Claude Code" in err
+
+
+def test_init_with_claude_code_present_is_quiet(tmp_path, capsys):
+    (tmp_path / ".claude").mkdir()
+    assert _run(["init"], tmp_path) == 0
+    assert capsys.readouterr().err == ""

@@ -304,3 +304,17 @@ def test_codex_init_names_an_isolated_uninstall(environment, capsys):
     _, project = environment
     assert install(project) == 0
     assert 'uvx --isolated qhaway uninstall --host codex' in capsys.readouterr().out
+
+
+def test_codex_init_without_codex_home_says_so(environment, capsys):
+    _, project = environment
+    assert cli.main(['init', '--host', 'codex', '--project', str(project)]) == 0
+    err = capsys.readouterr().err
+    assert "no ~/.codex" in err and "Codex" in err
+
+
+def test_codex_init_with_codex_home_is_quiet(environment, capsys):
+    home, project = environment
+    (home / '.codex').mkdir()
+    assert cli.main(['init', '--host', 'codex', '--project', str(project)]) == 0
+    assert capsys.readouterr().err == ""
