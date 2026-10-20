@@ -293,7 +293,10 @@ def write_index(directory: str, budget: int, style: str = "exit") -> None:
     memory_dir = Path(directory)
     conn = model.get_connection(directory)
     try:
-        total = len(model.topic_files(memory_dir))
+        # Live memories, as the header counts them; superseded ones are declared
+        # in the footer, not here (#55).
+        survey = project.project_slice_with_overflow(conn, budget=budget, limit=0)
+        total = sum(survey.overflow.omitted_counts.values())
 
         def compose_footer(omitted: int) -> str:
             if style == "live":
@@ -304,8 +307,8 @@ def write_index(directory: str, budget: int, style: str = "exit") -> None:
                 )
             return (
                 f"\n\n---\n_qhaway exit index — {total} memories under {budget} "
-                f"bytes; {omitted} set aside. Self-sufficient static index "
-                "(qhaway disabled)._\n"
+                f"bytes; {omitted} set aside. A static index; it does not "
+                "update itself._\n"
             )
 
         # Probe at full budget only to SIZE the reserve (footer + signature bytes);
