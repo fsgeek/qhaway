@@ -46,7 +46,7 @@ using `.git/info/exclude` or your established configuration policy. Installation
 does not change ignore rules or grant project trust. `uvx` needs to be available;
 the configured launcher fetches the published qhaway package, just as the Claude
 installer does. Before release, test the checkout with `uv run qhaway` and use
-the wheel smoke test below to exercise the new server rather than published 0.6.0.
+the wheel smoke test below to exercise the new server rather than the published release.
 
 Remove the managed connection from that project with:
 
@@ -73,7 +73,7 @@ this manual pilot, remove only its existing qhaway table yourself, then run init
 with `--dir` naming the same store. The installer never silently takes ownership
 of a user's entry. Back up and inspect manual edits before removing them.
 
-## Manual setup (also works with 0.6.0)
+## Manual setup
 
 Choose a curated-memory directory. It can be the existing qhaway/Claude store
 for this project if you intend both clients to contribute to the same memories,
@@ -87,13 +87,22 @@ rather than adding a duplicate. Replace both paths with paths on your machine:
 ```toml
 [mcp_servers.qhaway]
 command = "/absolute/path/to/uvx"
-args = ["--python", "3.14", "--from", "qhaway==0.7.3", "qhaway", "serve", "--dir", "/absolute/path/to/curated-memory"]
+args = ["--isolated", "--python", "3.14", "qhaway", "serve", "--dir", "/absolute/path/to/curated-memory"]
 startup_timeout_sec = 30
 ```
 
 Find `uvx` with `command -v uvx` on POSIX or `where.exe uvx` on Windows. For
-Windows TOML paths, forward slashes avoid backslash escaping. The version pin
-makes the pilot reproducible; update it deliberately when upgrading.
+Windows TOML paths, forward slashes avoid backslash escaping. This is the same
+entry `init --host codex` writes: `--isolated` and no version pin, so each start
+runs the current release.
+
+Don't pin a version (`--from qhaway==X`) for a store that another client also
+uses, such as a Claude store shared with Codex. Every client sharing a store
+should run the same qhaway, or at least 0.7.3 or later. Versions before 0.7.3
+delete and rebuild an index written by a newer version, so a pinned Codex and an
+up-to-date Claude Code take turns rebuilding each other's index. If you must pin
+for reproducibility, pin every client that shares the store, and move them
+together.
 
 Use the default redirect mode for Codex. Codex retrieves memory through MCP;
 it does not automatically load this store's `MEMORY.md`. Both Codex and Claude
