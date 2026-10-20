@@ -2,6 +2,12 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [Unreleased]
+
+### Security
+
+- Requires `mcp` 2.2.0 or later. `mcp` 2.0.0–2.1.x have CVE-2026-59951 (unbounded session accumulation in the StreamableHTTP transport). qhaway serves over stdio, so it was not exposed, and fresh installs already resolved to a fixed version; the floor keeps any resolver from choosing an affected one.
+
 ## [0.7.5] - 2026-10-15
 
 ### Changed
