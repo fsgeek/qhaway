@@ -14,6 +14,10 @@ All notable changes to qhaway are listed here; every version is published on [Py
 - The index always says what it left out, even at small budgets. When the per-type omissions footer can't fit, one compact line takes its place (`+3 not shown: 1 user, 1 feedback, 1 project.`); before, only the header remained, saying "showing 0" with no indication of what was missing ([#55](https://github.com/fsgeek/qhaway/issues/55)).
 - The written `MEMORY.md` trailer counts the same memories as its header (live ones; superseded memories are declared in the footer), and no longer says "(qhaway disabled)" after an ordinary `qhaway index` run ([#55](https://github.com/fsgeek/qhaway/issues/55)).
 
+### Security
+
+- Requires `mcp` 2.2.0 or later. `mcp` 2.0.0–2.1.x have CVE-2026-59951 (unbounded session accumulation in the StreamableHTTP transport). qhaway serves over stdio, so it was not exposed, and fresh installs already resolved to a fixed version; the floor keeps any resolver from choosing an affected one.
+
 ## [0.7.5] - 2026-10-15
 
 ### Changed
