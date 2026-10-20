@@ -65,13 +65,20 @@ as an example, not a benchmark.
 Before installing anything, check:
 
 ```sh
-uvx qhaway diagnose    # from inside your project, or pass --dir /path/to/memory
+cd /path/to/your/project   # the folder you start Claude Code in
+uvx qhaway diagnose
 ```
 
-It reads your `MEMORY.md` and says whether Claude Code loads all of it (Claude Code
+Claude Code keeps a project's memory in `~/.claude/projects/<project path, with
+each / and other punctuation turned into ->/memory/`, and `diagnose` finds it the
+same way, from the folder you run it in (not a subfolder). To check a memory
+folder directly, pass `--dir /path/to/memory` (or the path of its `MEMORY.md`).
+
+It reads `MEMORY.md` and says whether Claude Code loads all of it (Claude Code
 loads the first 200 lines, up to 25,000 bytes) and, if not, which entries fall
-past the cut. It only reads; nothing is written. Claude Desktop reads less: pass
-`--bytes` to check against a smaller limit.
+past the cut. It only reads; nothing is written. If your index is being cut,
+the Install section below is the fix. Claude Desktop reads less: one Cowork
+session reported about 3.5KB, so try `--bytes 3500`; `--lines` sets the line limit.
 
 ## Install
 

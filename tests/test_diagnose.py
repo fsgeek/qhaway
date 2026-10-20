@@ -67,3 +67,22 @@ def test_default_limits_name_their_source(tmp_path, capsys):
     _memory(tmp_path, 10)
     _, out = _run(["diagnose", "--dir", str(tmp_path)], capsys)
     assert "Claude Code 2.1.304" in out
+
+
+def test_dir_may_name_the_memory_file_itself(tmp_path, capsys):
+    _memory(tmp_path, 10)
+    rc, out = _run(["diagnose", "--dir", str(tmp_path / "MEMORY.md")], capsys)
+    assert rc == 0
+    assert "nothing is cut" in out
+
+
+def test_a_cut_index_points_at_the_fix(tmp_path, capsys):
+    _memory(tmp_path, 250, width=10)
+    _, out = _run(["diagnose", "--dir", str(tmp_path)], capsys)
+    assert "qhaway init" in out
+
+
+def test_limits_line_says_they_are_recorded_not_read_from_your_install(tmp_path, capsys):
+    _memory(tmp_path, 10)
+    _, out = _run(["diagnose", "--dir", str(tmp_path)], capsys)
+    assert "as recorded by qhaway" in out

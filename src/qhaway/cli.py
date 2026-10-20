@@ -40,7 +40,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("session-start")
     sub.add_parser("session-end")
     diagnose = sub.add_parser("diagnose", help="read-only: does Claude Code cut this MEMORY.md?")
-    diagnose.add_argument("--dir")
+    diagnose.add_argument("--dir", help="memory directory (or its MEMORY.md); default: this "
+                          "project's, as Claude Code names it from the current directory")
     diagnose.add_argument("--lines", type=int, help="line limit (default: Claude Code's)")
     diagnose.add_argument("--bytes", type=int, help="byte limit (default: Claude Code's)")
     for command, aliases in (("init", ["install"]), ("uninstall", [])):
@@ -240,7 +241,7 @@ def _diagnose(explicit_dir: str | None, max_lines: int, max_bytes: int) -> int:
     else:
         project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
         memory_dir = paths.memory_dir_for(str(Path(project_dir).resolve()))
-    memory_file = memory_dir / MEMORY_NAME
+    memory_file = memory_dir if memory_dir.name == MEMORY_NAME else memory_dir / MEMORY_NAME
     if not memory_file.is_file():
         sys.stdout.write(f"No MEMORY.md at {memory_file}. Pass --dir to point at a memory directory.\n")
         return 1
@@ -260,8 +261,8 @@ def _diagnose(explicit_dir: str | None, max_lines: int, max_bytes: int) -> int:
     ]
     if (max_lines, max_bytes) == (LOADER_LINES, LOADER_BYTES):
         out.append(f"Claude Code loads the first {max_lines} lines, up to {max_bytes:,} bytes "
-                   "(read from Claude Code 2.1.304). Claude Desktop reads less; pass --bytes "
-                   "to check against another limit.")
+                   "(Claude Code 2.1.304's limits, as recorded by qhaway). Claude Desktop "
+                   "reads less; pass --bytes to check against another limit.")
     else:
         out.append(f"Checking against the first {max_lines} lines, up to {max_bytes:,} bytes.")
     if loaded == len(lines):
@@ -278,6 +279,8 @@ def _diagnose(explicit_dir: str | None, max_lines: int, max_bytes: int) -> int:
             out += [f"  - {title}" for title in lost[:10]]
             if len(lost) > 10:
                 out.append(f"  +{len(lost) - 10} more")
+        out.append("To keep the index within the limit and the rest one call away: "
+                   "uvx qhaway init (see the README).")
     out.append("(diagnose only reads; nothing was changed.)")
     sys.stdout.write("\n".join(out) + "\n")
     return 0
