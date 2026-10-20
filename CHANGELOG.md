@@ -7,6 +7,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 ### Changed
 
 - `init` says so when the host isn't installed: with no `~/.claude` (or, for `--host codex`, no `~/.codex` or `$CODEX_HOME`) it still writes the configuration, which takes effect once the host is installed, but prints a note instead of succeeding silently ([#55](https://github.com/fsgeek/qhaway/issues/55)).
+- Docs: the Codex guide's manual setup no longer pins a version. It uses the installer's own entry (`--isolated`, unpinned) and explains why a pinned client sharing a store with an up-to-date one is a hazard: before 0.7.3, mixed versions rebuild each other's index. The old pinned example is how three local Codex configs stayed on 0.6.0 ([#40](https://github.com/fsgeek/qhaway/issues/40)).
 - Docs: the README now says the first index qhaway sets aside becomes `MEMORY.preinstall.md` and later ones get timestamped names; the Codex guide says uninstall leaves the empty install lock on purpose ([#55](https://github.com/fsgeek/qhaway/issues/55)).
 
 ### Fixed
