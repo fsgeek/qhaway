@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -38,6 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--inline-index", action="store_true")
     sub.add_parser("session-start")
     sub.add_parser("session-end")
+    diagnose = sub.add_parser("diagnose", help="read-only: does Claude Code cut this MEMORY.md?")
+    diagnose.add_argument("--dir")
+    diagnose.add_argument("--lines", type=int, help="line limit (default: Claude Code's)")
+    diagnose.add_argument("--bytes", type=int, help="byte limit (default: Claude Code's)")
     for command, aliases in (("init", ["install"]), ("uninstall", [])):
         p = sub.add_parser(command, aliases=aliases)
         p.add_argument("--host", choices=("claude", "codex"), default="claude")
@@ -63,6 +68,9 @@ def main(args: list[str] | None = None) -> int:
         if ns.project is not None or getattr(ns, "dir", None) is not None:
             parser.error("--project and --dir require --host codex")
         return _setup_cmd(ns.command)
+
+    if ns.command == "diagnose":
+        return _diagnose(ns.dir, ns.lines or LOADER_LINES, ns.bytes or LOADER_BYTES)
 
     directory = _resolve_dir(ns)
     if directory is None:
@@ -210,6 +218,69 @@ def _session(which: str) -> int:
                                   "omitted": result.overflow.omitted_counts})
         return 0
     return _exit(directory, project.DEFAULT_BUDGET)
+
+
+# Claude Code's MEMORY.md load caps: the first 200 lines, and at most 25,000
+# bytes cut at the last newline within the limit. Read from Claude Code 2.1.304's
+# own code on 2026-10-20 (`cp="MEMORY.md",mF=200,Ule=25000`);
+# scripts/check_cc_limits.py re-checks an installed build.
+LOADER_LINES = 200
+LOADER_BYTES = 25_000
+_ENTRY = re.compile(r"^\s*- \[(.+?)\]\(")
+
+
+def _diagnose(explicit_dir: str | None, max_lines: int, max_bytes: int) -> int:
+    """Report whether Claude Code's loader cuts MEMORY.md, and which entries it
+    loses. Reads only: no reconcile, no database, and no store adoption (the
+    pure memory_dir_for, not paths.resolve), so it is safe on any store."""
+    if explicit_dir:
+        memory_dir = Path(explicit_dir)
+    elif os.environ.get("QHAWAY_MEMORY_DIR"):
+        memory_dir = Path(os.environ["QHAWAY_MEMORY_DIR"])
+    else:
+        project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+        memory_dir = paths.memory_dir_for(str(Path(project_dir).resolve()))
+    memory_file = memory_dir / MEMORY_NAME
+    if not memory_file.is_file():
+        sys.stdout.write(f"No MEMORY.md at {memory_file}. Pass --dir to point at a memory directory.\n")
+        return 1
+
+    lines = memory_file.read_bytes().splitlines(keepends=True)
+    total_bytes = sum(len(line) for line in lines)
+    by_bytes, used = 0, 0
+    for line in lines:
+        if used + len(line) > max_bytes:
+            break
+        used += len(line)
+        by_bytes += 1
+    loaded = min(len(lines), max_lines, by_bytes)
+    out = [
+        f"{memory_file}",
+        f"MEMORY.md: {total_bytes:,} bytes, {len(lines)} lines.",
+    ]
+    if (max_lines, max_bytes) == (LOADER_LINES, LOADER_BYTES):
+        out.append(f"Claude Code loads the first {max_lines} lines, up to {max_bytes:,} bytes "
+                   "(read from Claude Code 2.1.304). Claude Desktop reads less; pass --bytes "
+                   "to check against another limit.")
+    else:
+        out.append(f"Checking against the first {max_lines} lines, up to {max_bytes:,} bytes.")
+    if loaded == len(lines):
+        out.append("Within both limits: nothing is cut.")
+    else:
+        limit = "byte" if by_bytes < min(len(lines), max_lines) else "line"
+        lost = [m.group(1) for raw in lines[loaded:]
+                if (m := _ENTRY.match(raw.decode("utf-8", "replace")))]
+        out.append(f"{len(lines) - loaded} of {len(lines)} lines are not loaded "
+                   f"(cut by the {limit} limit after line {loaded}).")
+        if lost:
+            out.append(f"{len(lost)} entries are past the cut. If new entries are added at "
+                       "the bottom, these are the newest:")
+            out += [f"  - {title}" for title in lost[:10]]
+            if len(lost) > 10:
+                out.append(f"  +{len(lost) - 10} more")
+    out.append("(diagnose only reads; nothing was changed.)")
+    sys.stdout.write("\n".join(out) + "\n")
+    return 0
 
 
 def _resolve_dir(ns, environ=None, home=None, cwd=None) -> str | None:
