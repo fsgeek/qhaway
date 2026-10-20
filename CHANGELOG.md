@@ -6,7 +6,7 @@ All notable changes to qhaway are listed here; every version is published on [Py
 
 ### Added
 
-- `qhaway diagnose`: a read-only check of whether Claude Code cuts your `MEMORY.md` (it loads the first 200 lines, up to 25,000 bytes), and which entries fall past the cut. No database, no reconcile, nothing written. `--lines`/`--bytes` check against another host's limits; Claude Desktop reads less.
+- `qhaway diagnose`: a read-only check of whether Claude Code cuts your `MEMORY.md` (it loads the first 200 lines, up to 25,000 bytes), and which entries fall past the cut. No database, no reconcile, nothing written. `--dir` takes the memory folder or its `MEMORY.md`; `--lines`/`--bytes` check against another host's limits (Claude Desktop reads less). A cut index's report points at `qhaway init`.
 - `scripts/check_cc_limits.py` compares an installed Claude Code's `MEMORY.md` caps with the ones qhaway assumes (exit 1 if they differ, 2 if it can't find them).
 
 ### Changed
