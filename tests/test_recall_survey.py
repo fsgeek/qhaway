@@ -152,11 +152,65 @@ def test_query_requires_every_term(tmp_path):
     assert "tag-slip" in text
 
 
-def test_query_never_matches_bodies(tmp_path):
+def test_query_falls_back_to_bodies_when_no_title_or_description_matches(tmp_path):
     _write_full(tmp_path, "plain", "nothing to see", body="the word zanzibar is only in the body\n")
+    _write_full(tmp_path, "other", "nothing here either")
     server.initialize_server(str(tmp_path))
 
     text = server.recall(query="zanzibar", memory_dir=str(tmp_path))
+
+    assert text.splitlines()[0] == "1 memory matches in body text only; all shown."
+    assert "plain" in text and "other" not in text
+    assert "is only in the body" not in text  # the index line is returned, never the body
+
+
+def test_body_fallback_is_only_for_a_miss(tmp_path):
+    _write_full(tmp_path, "titled-zanzibar", "zanzibar in the description")
+    _write_full(tmp_path, "plain", "nothing to see", body="zanzibar in the body\n")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(query="zanzibar", memory_dir=str(tmp_path))
+
+    assert text.splitlines()[0] == "1 matching memory; all shown."
+    assert "plain" not in text
+
+
+def test_body_fallback_terms_may_span_title_and_body(tmp_path):
+    _write_full(tmp_path, "tag-slip", "the release tag moved", body="it landed on the wrong commit\n")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(query="release commit", memory_dir=str(tmp_path))
+
+    assert text.splitlines()[0] == "1 memory matches in body text only; all shown."
+
+
+def test_query_miss_says_bodies_were_searched(tmp_path):
+    _write_full(tmp_path, "plain", "nothing to see", body="nor here\n")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(query="zanzibar", memory_dir=str(tmp_path))
+
+    assert text.splitlines()[0] == "No matching memories. Bodies were searched too."
+
+
+def test_a_query_matching_only_superseded_titles_does_not_claim_bodies_were_searched(tmp_path):
+    (tmp_path / "zanzibar-old.md").write_text(
+        "---\nname: SUPERSEDED — see the new note\ntype: project\n---\nold\n", encoding="utf-8"
+    )
+    _write_full(tmp_path, "plain", "nothing to see", body="zanzibar in the body\n")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(query="zanzibar", memory_dir=str(tmp_path))
+
+    assert text.splitlines()[0] == "No matching memories."
+    assert "+1 superseded memories hidden" in text
+
+
+def test_a_miss_without_a_query_does_not_mention_bodies(tmp_path):
+    _write_full(tmp_path, "plain", "nothing to see")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(type="reference", memory_dir=str(tmp_path))
 
     assert text.splitlines()[0] == "No matching memories."
 

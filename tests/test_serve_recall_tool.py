@@ -96,7 +96,7 @@ def test_recall_events_share_a_per_process_session_and_record_the_header(tmp_pat
     first, second = [json.loads(l) for l in (tmp_path / "events.jsonl").read_text().splitlines()]
     assert first["session_id"] and first["session_id"] == second["session_id"]
     assert first["header"] == "1 matching memory; all shown."
-    assert second["header"] == "No matching memories."
+    assert second["header"] == "No matching memories. Bodies were searched too."
 
 
 def test_remember_stamps_the_date_it_was_written(tmp_path):
