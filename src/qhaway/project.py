@@ -62,7 +62,7 @@ def project_slice(
     full_bytes = _byte_len(_render_entries(ordered))
 
     def header(shown: int) -> str:
-        return _header(len(filtered), shown, full_bytes, terms, in_body)
+        return _header(len(filtered), shown, full_bytes, in_body)
 
     candidate_footer = _candidate_footer(filtered, hidden_superseded, hint)
     # The partial form with shown == total is the longest the header can be.
@@ -161,9 +161,9 @@ def _select(
     return filtered, hidden, False
 
 
-def _header(total: int, shown: int, full_bytes: int, terms: list[str] = [], in_body: bool = False) -> str:
+def _header(total: int, shown: int, full_bytes: int, in_body: bool = False) -> str:
     if total == 0:
-        return "No matching memories. Bodies were searched too." if terms else "No matching memories."
+        return "No matching memories. Bodies were searched too." if in_body else "No matching memories."
     if shown == total:
         return f"{_matching(total, in_body)}; all shown."
     return _partial_header(total, shown, full_bytes, in_body)
