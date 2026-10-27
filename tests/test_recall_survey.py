@@ -193,6 +193,19 @@ def test_query_miss_says_bodies_were_searched(tmp_path):
     assert text.splitlines()[0] == "No matching memories. Bodies were searched too."
 
 
+def test_a_query_matching_only_superseded_titles_does_not_claim_bodies_were_searched(tmp_path):
+    (tmp_path / "zanzibar-old.md").write_text(
+        "---\nname: SUPERSEDED — see the new note\ntype: project\n---\nold\n", encoding="utf-8"
+    )
+    _write_full(tmp_path, "plain", "nothing to see", body="zanzibar in the body\n")
+    server.initialize_server(str(tmp_path))
+
+    text = server.recall(query="zanzibar", memory_dir=str(tmp_path))
+
+    assert text.splitlines()[0] == "No matching memories."
+    assert "+1 superseded memories hidden" in text
+
+
 def test_a_miss_without_a_query_does_not_mention_bodies(tmp_path):
     _write_full(tmp_path, "plain", "nothing to see")
     server.initialize_server(str(tmp_path))
