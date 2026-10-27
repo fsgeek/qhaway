@@ -922,9 +922,6 @@ def test_cli_budget_overflow_handling(temp_memory_dir):
     assert len(proj_result.markdown.encode("utf-8")) <= budget
     assert "not shown" in proj_result.markdown
     assert proj_result.overflow.omitted_counts["project"] > 0
-    
-    # Test through recall CLI query
-    res = run_qhaway_cli(["serve"]) # serve starts MCP server, but we can call project slice directly
     conn.close()
 
 
