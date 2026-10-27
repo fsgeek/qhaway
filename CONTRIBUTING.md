@@ -46,10 +46,11 @@ Arango to contribute to core qhaway.
 
 qhaway keeps a memory index within its budget and makes whatever it leaves out
 cheap to get back. That is why `recall(query=...)` searches titles and
-descriptions, and searches bodies only when those miss: half of the misses
-measured in October were words no memory contained anywhere, and the rest were
-mostly in bodies (docs/usage-preregistration-2026-10.md). Full-text search as a
-feature, ranking, write tooling, and audit are real later ideas, deliberately out of scope here — see the "Design philosophy" section of
+descriptions, and searches bodies only when those match nothing: of 14 distinct
+queries that missed in October, 7 were words no memory contained anywhere and 4
+were in bodies (docs/miss-fix-preregistration-2026-10.md). Results are always
+index lines. Returning or ranking body text, write tooling, and audit are real
+later ideas, deliberately out of scope here — see the "Design philosophy" section of
 the README. A PR that adds one of these
 is more likely to start as an issue discussing whether it belongs at all.
 
