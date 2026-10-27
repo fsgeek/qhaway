@@ -50,4 +50,63 @@ edited.
 
 ## Results
 
-(none yet)
+### 2026-10-27: evaluated at the registered stopping point, six days late
+
+**When.** The rule ("at least 30 session-start events and 50 recall events")
+was met at 2026-10-21T05:35:38Z, when the 50th recall arrived. The 30th
+session-start had come on 10-09. No instance was working on qhaway between 10-20
+and 10-26, so nobody evaluated it at the time. These results use only events up
+to and including that 50th recall. The extra 18 recalls that arrived later are
+reported separately below and don't count as results.
+
+**Reproduce.** The metric code in `scripts/usage_report.py` is unchanged. The
+cut is made outside it, by keeping recalls and session-starts with
+`ts <= recalls[49]["ts"]` after sorting both by `ts`, then calling
+`report(recalls, starts)` on what's left.
+
+| # | Actual (n) | Threshold | Verdict |
+|---|---|---|---|
+| P1 | 0.35 (28 sessions / 80 starts) | ≤ 0.30 | differs |
+| P2 | 0.12 (6/50) | ≥ 0.50 | differs |
+| P3 | 0.58 (29/50) | 0.15–0.45 | differs |
+| P4a | 0.68 (34/50) | ≤ 0.10 | differs |
+| P4b | 0.04 (2/50) | ≤ 0.05 | as expected |
+| P5 | 0.48 (14/29) | ≥ 0.25 | as expected |
+| P6 | 0.10 (1/10) | ≥ 0.10 | as expected (on the threshold, n = 10) |
+| P7 | 1.00 (11/11) | ≥ 0.60 | as expected |
+| P8 | 0.83 (5/6) | ≥ 0.60 | as expected (n = 6) |
+| P9 | 1.00 (80/80) | = 1.00 | as expected |
+
+**What it says.** Instances don't copy the footer. Only 12% of recalls used
+the `recall(type="…")` call the footer prints, while 58% wrote a query and 68%
+set a `limit`, which the footer never shows. P4a's reasoning, that instructions
+are read once and forgotten, was wrong: the server instructions taught `limit`
+and it got used. P2's reasoning, that copying is cheaper than composing, fails
+because instances arrive already holding a word to look up. Queries miss about
+half the time (P5), and every miss was followed by another query (P7, 11/11).
+The miss is cheap, but it isn't free. The P1 ratio is close to the threshold
+and is the weakest result: it compares counts, because session-start events
+can't be joined to MCP sessions.
+
+**Not results: the full log at 2026-10-27 (68 recalls, 118 starts).** P1 is
+0.30, which would read as "as expected". P2 0.10, P3 0.62, P4a 0.72 and P5
+0.43 (18/42) point the same way as at the stopping point. P1 moving across its
+threshold depending on when the data was cut is the reason the stopping rule
+exists.
+
+**Disclosures.**
+- Three looks came before the stopping point was evaluated: 2026-10-15 at n = 35
+  (P5 9/20; written to qhaway's memory, nothing changed); 2026-10-20 at n = 46
+  (the session handoff); and 2026-10-26 at n = 68, by the instance writing
+  this, before it applied the cut.
+- Before writing this, that instance had also read the text around each
+  recall call in Claude Code transcripts since 10-01 (54 calls). That is
+  exploratory and was not registered. Most calls came right after the user
+  invited the instance to look around, or corrected it, or right after a
+  specific word appeared in the task (`P-M3`, `TurboQuant`, `PyPI`). It counts
+  as a hypothesis for the next registration, not a result. Some transcripts
+  appear under two project folders, so those counts include duplicates.
+- Some recalls in the window came from qhaway's own development sessions.
+
+**Consequence.** P5 holds, so the next build makes misses cheaper, measured
+against a new registration written before that build ships.
