@@ -2,6 +2,20 @@
 
 All notable changes to qhaway are listed here; every version is published on [PyPI](https://pypi.org/project/qhaway/).
 
+## [0.8.0] - 2026-10-27
+
+### Changed
+
+- `recall(query=...)` searches memory bodies when no title, description or filename matches. It still answers with index lines, never body text, and the first line says the match came from bodies: `2 memories match in body text only; all shown.` A query that matches nothing anywhere now says `No matching memories. Bodies were searched too.`, so the caller knows rephrasing won't find it in the store. In October, 48% of query recalls missed (14 of 29), and every miss was followed by another query. Of the 14 distinct missed queries, 7 named words no memory contained and 4 were in bodies. Any-word matching was considered and rejected: it returned 11 to 54 memories for the multi-word misses. Pre-registered effect: docs/miss-fix-preregistration-2026-10.md.
+
+### Fixed
+
+- A test ran `qhaway serve` with no `--dir`, so it regenerated the developer's own `MEMORY.md` on every test run. Only people running the test suite were affected.
+
+### Documentation
+
+- Results of the October usage study (docs/usage-preregistration-2026-10.md), evaluated at its registered stopping point, and a pre-registration for measuring memory cost per session with and without qhaway (docs/memory-cost-preregistration-2026-10.md).
+
 ## [0.7.6] - 2026-10-20
 
 ### Added

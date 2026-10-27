@@ -195,8 +195,8 @@ Two verbs are exposed to the model:
 
 - `recall(type?, role?, status?, limit?, query?)` — pure read; returns the
   budgeted projection (omit args for the working set). `query` keeps memories
-  whose title, description or filename contains every term (case-insensitive).
-  Only if none does are bodies searched, and the first line says so
+  whose title, description or filename contains every word of the query, in
+  any order (case-insensitive). Only if no memory does are bodies searched, and the first line says so
   (`2 memories match in body text only; all shown.`); a miss says
   `No matching memories. Bodies were searched too.` Either way the result is
   index lines, never bodies. Its first line gives the slice's
@@ -363,7 +363,8 @@ the index rebuilds from the files. Nothing is interpreted, merged, or lost.
 
 One pain, fixed completely: **an index too big for its loader**. qhaway keeps the index within budget
 and makes what it sets aside cheap to get back, which is why `recall` can search
-titles and descriptions, falling back to bodies on a miss. Full-text search as a feature, deep audit, write tooling, and ranking
+titles and descriptions, falling back to bodies when those match nothing, and always answers with
+index lines. Returning body text, deep audit, write tooling, and ranking
 sophistication are deliberately *not* in this version — each is a real later
 idea, none is this version's job.
 

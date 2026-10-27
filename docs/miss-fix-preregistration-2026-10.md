@@ -28,7 +28,9 @@ stood at the time, dating undated memories by file modification time:
   multi-word queries, which is noise rather than an answer, so it was
   rejected.
 - 1 (`apacheta`) should have matched titles under the old rule as well. That
-  is unexplained.
+  is unexplained. (Explained later on 2026-10-27, in the release replay: its
+  only title match was a superseded memory, so the slice was empty and the
+  footer said `+1 superseded memories hidden`. The predictions are unchanged.)
 
 The predictions below were set from that replay. That makes them easier to
 meet than predictions set blind, and this is stated here rather than hidden.
