@@ -45,42 +45,28 @@ def project_slice(
     `limit` caps the entries shown; limit=0 is a count-only survey. The first line
     always states the slice's size, so a reader knows what it holds before
     reading on (#20). `query` keeps rows whose title, description or filename
-    contain every whitespace-separated term, case-insensitively; bodies are never
-    searched — the trigger fields are what the index is made of.
+    contain every whitespace-separated term, case-insensitively — the trigger fields
+    are what the index is made of. Only when nothing matches there are bodies
+    searched, and the header says so; either way the result is index lines.
     `frontier` selects that many of the newest non-standing rows first.
     """
 
     terms = _query_terms(query)
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
     _attach_retractions(db_conn, rows)
-    superseded_slugs = _superseded_slugs(db_conn)
-    filtered = [
-        row
-        for row in rows
-        if _effective_status(row, superseded_slugs) == status
-        and (content_type is None or row["content_type"] == content_type)
-        and (role is None or row["role"] == role)
-        and _matches(row, terms)
-    ]
-    hidden_superseded = [
-        row
-        for row in rows
-        if status == "live"
-        and _effective_status(row, superseded_slugs) == "superseded"
-        and (content_type is None or row["content_type"] == content_type)
-        and (role is None or row["role"] == role)
-        and _matches(row, terms)
-    ]
+    filtered, hidden_superseded, in_body = _select(
+        rows, _superseded_slugs(db_conn), status, content_type, role, terms
+    )
 
     ordered = sorted(filtered, key=cmp_to_key(_compare_rows))
     full_bytes = _byte_len(_render_entries(ordered))
 
     def header(shown: int) -> str:
-        return _header(len(filtered), shown, full_bytes)
+        return _header(len(filtered), shown, full_bytes, terms, in_body)
 
     candidate_footer = _candidate_footer(filtered, hidden_superseded, hint)
     # The partial form with shown == total is the longest the header can be.
-    reserve = _byte_len(_join_lines([_partial_header(len(filtered), len(filtered), full_bytes)]))
+    reserve = _byte_len(_join_lines([_partial_header(len(filtered), len(filtered), full_bytes, in_body)]))
     fill_budget = max(0, budget - _byte_len(candidate_footer) - reserve)
 
     recent = [row for row in ordered if _priority(row)][:frontier]
@@ -135,21 +121,62 @@ def _query_terms(query: str | None) -> list[str]:
     return query.lower().split() if query else []
 
 
-def _matches(row: dict[str, Any], terms: list[str]) -> bool:
-    text = f"{_title(row)} {row.get('description') or ''} {row['file']}".lower()
+def _matches(row: dict[str, Any], terms: list[str], in_body: bool = False) -> bool:
+    text = f"{_title(row)} {row.get('description') or ''} {row['file']}"
+    if in_body:
+        text += f" {row['body']}"
+    text = text.lower()
     return all(term in text for term in terms)
 
 
-def _header(total: int, shown: int, full_bytes: int) -> str:
+def _select(
+    rows: list[dict[str, Any]],
+    superseded_slugs: set[str],
+    status: str,
+    content_type: str | None,
+    role: str | None,
+    terms: list[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
+    """The rows in the slice, the superseded rows it hides, and whether the
+    query had to reach bodies: a query that matches no title or description
+    falls back to bodies, so a miss means the store doesn't say it at all."""
+
+    def pick(in_body: bool) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        kept = [
+            row
+            for row in rows
+            if (content_type is None or row["content_type"] == content_type)
+            and (role is None or row["role"] == role)
+            and _matches(row, terms, in_body)
+        ]
+        return (
+            [row for row in kept if _effective_status(row, superseded_slugs) == status],
+            [row for row in kept if status == "live" and _effective_status(row, superseded_slugs) == "superseded"],
+        )
+
+    filtered, hidden = pick(False)
+    if terms and not filtered and not hidden:
+        filtered, hidden = pick(True)
+        return filtered, hidden, True
+    return filtered, hidden, False
+
+
+def _header(total: int, shown: int, full_bytes: int, terms: list[str] = [], in_body: bool = False) -> str:
     if total == 0:
-        return "No matching memories."
+        return "No matching memories. Bodies were searched too." if terms else "No matching memories."
     if shown == total:
-        return f"{total} matching {_memories(total)}; all shown."
-    return _partial_header(total, shown, full_bytes)
+        return f"{_matching(total, in_body)}; all shown."
+    return _partial_header(total, shown, full_bytes, in_body)
 
 
-def _partial_header(total: int, shown: int, full_bytes: int) -> str:
-    return f"{total} matching {_memories(total)}, {full_bytes:,} bytes in full; showing {shown}."
+def _partial_header(total: int, shown: int, full_bytes: int, in_body: bool = False) -> str:
+    return f"{_matching(total, in_body)}, {full_bytes:,} bytes in full; showing {shown}."
+
+
+def _matching(total: int, in_body: bool) -> str:
+    if in_body:
+        return f"{total} {_memories(total)} {'matches' if total == 1 else 'match'} in body text only"
+    return f"{total} matching {_memories(total)}"
 
 
 def _memories(count: int) -> str:
@@ -425,15 +452,9 @@ def project_slice_with_overflow(
     markdown = project_slice(db_conn, budget, content_type, role, status, hint, limit, query, frontier)
     terms = _query_terms(query)
     rows = [_normalize_row(node) for node in fetch_nodes(db_conn)]
-    superseded_slugs = _superseded_slugs(db_conn)
-    filtered = [
-        row
-        for row in rows
-        if _effective_status(row, superseded_slugs) == status
-        and (content_type is None or row["content_type"] == content_type)
-        and (role is None or row["role"] == role)
-        and _matches(row, terms)
-    ]
+    filtered, hidden_superseded, _ = _select(
+        rows, _superseded_slugs(db_conn), status, content_type, role, terms
+    )
     # An entry line is "](file) — hook"; a retraction marker also links a file,
     # but never followed by " — ", so it cannot pass for a shown entry.
     omitted = [row for row in filtered if f"]({row['file']}) — " not in markdown]
@@ -441,15 +462,7 @@ def project_slice_with_overflow(
     for row in omitted:
         omitted_counts[row["content_type"]] = omitted_counts.get(row["content_type"], 0) + 1
 
-    superseded_count = sum(
-        1
-        for row in rows
-        if status == "live"
-        and _effective_status(row, superseded_slugs) == "superseded"
-        and (content_type is None or row["content_type"] == content_type)
-        and (role is None or row["role"] == role)
-        and _matches(row, terms)
-    )
+    superseded_count = len(hidden_superseded)
 
     overflow = Overflow(
         omitted_counts=omitted_counts,
