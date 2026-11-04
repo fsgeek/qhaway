@@ -18,8 +18,7 @@ The index grows, and the loader has a limit. Current Claude Code cuts an index
 past about 25KB and appends a warning saying how many lines were lost. Earlier
 versions cut it silently, which is how qhaway began: a 36.8KB, 137-entry index
 against a ~24.4KB limit, with the newest section, including the pointer to the
-latest state, past the cut. Claude Desktop's Cowork reads far less; a Cowork
-session reported about 3.5KB.
+latest state, past the cut.
 
 A warning doesn't bring back what was cut. The cut is positional: whatever comes
 first is kept, and in an index that grows at the bottom, the newest entries are
@@ -77,8 +76,8 @@ folder directly, pass `--dir /path/to/memory` (or the path of its `MEMORY.md`).
 It reads `MEMORY.md` and says whether Claude Code loads all of it (Claude Code
 loads the first 200 lines, up to 25,000 bytes) and, if not, which entries fall
 past the cut. It only reads; nothing is written. If your index is being cut,
-the Install section below is the fix. Claude Desktop reads less: one Cowork
-session reported about 3.5KB, so try `--bytes 3500`; `--lines` sets the line limit.
+the Install section below is the fix. To check against another loader's
+limits, pass `--bytes` and `--lines`.
 
 ## Install
 
@@ -271,13 +270,23 @@ OpenCode, in `opencode.json`:
 
 ## Hookless hosts (Claude Desktop / Cowork)
 
-Claude Desktop's Cowork keeps a per-space memory store in the same shape — topic
-`.md` files plus a `MEMORY.md` index — but it runs **no session hooks**, and it
-loads `MEMORY.md` straight through a reader that truncates far earlier than
-Claude Code's (a Cowork session itself reported ~3.5KB when asked; not
-independently measured — treat `--budget` as something to verify on your host). The redirect design above assumes a
-hook will deliver the projection; on a host with no hooks, a session that never
-calls `recall()` would boot with a stub and nothing else.
+**Cloud Cowork (Claude Desktop, as of November 2026) doesn't use `MEMORY.md`,
+so qhaway has nothing to do there.** A Cowork session running in Anthropic's
+cloud container reported that its memory is a server-side MCP service: its
+tools address virtual paths, it injects a structured snapshot at session start,
+and no `MEMORY.md` is loaded. Its working directory is in the container, so
+there's no file on your machine for qhaway to maintain ([#88](https://github.com/fsgeek/qhaway/issues/88)).
+
+The rest of this section applies to a Cowork that keeps a per-space store on
+your disk in Claude Code's shape: topic `.md` files plus a `MEMORY.md` index,
+under the app-data directory. Desktop wrote such stores until at least
+September 2026. That Cowork runs **no session hooks**. An August 2026 session
+reported that it cut `MEMORY.md` at about 3.5KB, but that was never measured,
+and Cowork's own `consolidate-memory` skill now targets Claude Code's limits
+(200 lines, ~25KB). Measure the limit on your host before choosing `--budget`.
+The redirect design above assumes a hook will deliver the projection; on a host
+with no hooks, a session that never calls `recall()` would boot with a stub and
+nothing else.
 
 For those hosts, run the server in **inline-index mode**:
 
@@ -310,7 +319,8 @@ The space's memory directory is the folder holding its `MEMORY.md`, under the
 Claude app-data directory (on Windows,
 `%APPDATA%\Claude\local-agent-mode-sessions\<session>\<agent>\spaces\<space>\memory`);
 searching that tree for `MEMORY.md` is the quickest way to find it. Set
-`--budget` to your host's observed limit with a little headroom.
+`--budget` to your host's measured limit with a little headroom (the examples
+use 3400, from the unmeasured August report).
 
 qhaway runs natively on Windows (the test suite runs there in CI), so the
 entry above works as-is with `uv` installed on Windows. Running Claude Desktop
