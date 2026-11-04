@@ -7,6 +7,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Advisories arrive between pushes: opentelemetry-api's CVE-2026-114603 was
+  # found only when an unrelated PR ran (2026-10-27). The scheduled run is the
+  # audit alone; test and wheel skip it.
+  schedule:
+    - cron: "17 13 * * *"
 
 # A newer push to the same branch/PR cancels the in-flight run.
 concurrency:
@@ -16,6 +21,7 @@ concurrency:
 jobs:
   test:
     name: test (${{ matrix.os }}, Python ${{ matrix.python }})
+    if: github.event_name != 'schedule'
     # Linux is where it was built; macOS is the Claude Desktop host; Windows is
     # the majority desktop and the one that surfaced fcntl/NTFS/CRLF breakage
     # nothing else could see (2026-09-01).
@@ -51,6 +57,7 @@ jobs:
     # suite was green for five releases while bare `qhaway index` wrote nothing
     # (fixed in 0.5.1) — only installing the artifact can see that class.
     name: wheel (${{ matrix.os }})
+    if: github.event_name != 'schedule'
     strategy:
       fail-fast: false
       matrix:
